@@ -1,1 +1,5 @@
 update-git.sh
+build/
+cmake-build-*/
+.cache/
+compile_commands.json
