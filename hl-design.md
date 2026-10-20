@@ -2,11 +2,11 @@
 
 Oct 20, 2026
 
-`hl` for Haiku is a C++17 reimplementation of the core of [pamburus/hl](https://github.com/pamburus/hl): a fast viewer that turns JSON and logfmt logs into readable, coloured, filterable output. It is built as a portable core with a thin Haiku platform layer, so it can be developed and tested on Linux and shipped as a Haiku package.
+`hl` for Haiku is a C++17 log-file viewer inspired by the core of [pamburus/hl](https://github.com/pamburus/hl). It reads ordinary text logs and adds structured formatting and filtering when entries are JSON or logfmt. It is built as a portable core with a thin Haiku platform layer, so it can be developed and tested on Linux and shipped as a Haiku package.
 
 ## Goals and non-goals
 
-v1 must read JSON and logfmt logs from files, compressed files and stdin, and print them in a coloured, human-readable form fast enough that a multi-gigabyte log is not a wait. The upstream project reports about 1.1 seconds for a 2.3 GiB, 6-million-line file on a 10-core Apple M1 Max; we use that as a reference point, not a promise.
+v1 must read plain-text, JSON and logfmt logs from files, compressed files and stdin, and print them in a coloured, human-readable form fast enough that a multi-gigabyte log is not a wait. Plain-text entries always remain usable even when they have no recognised structure. The upstream project reports about 1.1 seconds for a 2.3 GiB, 6-million-line file on a 10-core Apple M1 Max; we use that as a reference point, not a promise.
 
 **Goals**
 
@@ -29,6 +29,7 @@ Upstream `hl` is a Rust tool (MIT licence) that converts JSON and logfmt logs to
 | Feature | Upstream option | Phase |
 | --- | --- | --- |
 | Concatenate several files, read stdin | `hl *.log`, `-` | MVP |
+| Plain-text logs and unrecognised entries | automatic pass-through | MVP |
 | JSON and logfmt input, auto-detected | `--input-format` | MVP |
 | Level filter | `-l` | MVP |
 | Field filter (`=`, `!=`, `~=`, `!~=`, `?` modifier, nested paths) | `-f` | MVP |
@@ -150,11 +151,11 @@ Design rules:
 
 - **Zero copy.** Views point into the input buffer. Strings with escapes are decoded only when a filter or the formatter needs the text, into a per-worker arena that is reset after each entry.
 - **Lazy nesting.** Objects and arrays stay as raw slices. Paths such as `request.method` or `span.[1].name` descend into them on demand, which keeps flat logs cheap.
-- **Two scanners, one interface.** `JsonScanner` handles one JSON object per entry; `LogfmtScanner` handles `key=value` pairs with quoted values, where a bare key means `true`. Format is detected from the first non-blank byte (`{` means JSON) unless `--input-format` forces it.
+- **Structured scanners are optional enhancements.** `JsonScanner` handles one JSON object per entry; `LogfmtScanner` handles `key=value` pairs with quoted values, where a bare key means `true`. Format is detected from the entry contents unless `--input-format` forces it. Entries that do not match either structured format are plain text and pass through unchanged.
 - **Prefix tolerance.** With `--allow-prefix` the JSON scanner skips bytes up to the first `{`; the skipped text is kept and printed before the formatted entry.
 - **Predefined fields.** Time, level, message, logger and caller are looked up by lists of candidate key names (for example `ts`, `time`, `timestamp` for time). The lists live in the default config so users can extend them.
 - **Timestamps.** A hand-written RFC 3339 parser covers the common case; numeric values are read as Unix time with the unit guessed from magnitude or forced by `--unix-timestamp-unit`.
-- **Bad input.** An entry that fails to parse is passed through unchanged rather than dropped, and a counter of such entries is kept for diagnostics. Whether filters apply to these entries is an open question (see Risks).
+- **Plain and malformed input.** An unrecognised entry or one that fails structured parsing is passed through unchanged rather than dropped. Forced structured input records parse failures for diagnostics; automatic mode treats unrecognised entries as normal text. Whether structured filters apply to plain entries is an open question (see Risks).
 
 ## Query and filter language
 
@@ -302,7 +303,7 @@ Usage is `hl [OPTIONS] [FILE]...`; with no files, or with `-`, input comes from 
 
 | Group | Options | Environment variable | Default |
 | --- | --- | --- | --- |
-| Input | `--input-format auto\|json\|logfmt` | `HL_INPUT_FORMAT` | `auto` |
+| Input | `--input-format auto\|text\|json\|logfmt` | `HL_INPUT_FORMAT` | `auto` |
 | Input | `--delimiter`, `--allow-prefix`, `--unix-timestamp-unit` | `HL_DELIMITER`, `HL_ALLOW_PREFIX`, `HL_UNIX_TIMESTAMP_UNIT` | `auto`, off, `auto` |
 | Filter | `-l/--level`, `--since`, `--until`, `-f/--filter`, `-q/--query` | `HL_LEVEL` | none |
 | Output | `--color auto\|always\|never`, `-c`, `--theme` | `HL_COLOR`, `HL_THEME` | `auto`, `uni` |
@@ -341,7 +342,7 @@ Usage is `hl [OPTIONS] [FILE]...`; with no files, or with `-`, input comes from 
 **Recipe sketch** (HaikuPorts recipes are shell scripts with `BUILD()` and `INSTALL()` functions; see the [recipe reference](https://www.github.com/haikuports/haikuports/wiki/HaikuPorter-BuildRecipes) and check field names against it before submitting):
 
 ```sh
-SUMMARY="Fast viewer for JSON and logfmt logs"
+SUMMARY="Fast viewer for text and structured logs"
 LICENSE="MIT"
 ARCHITECTURES="all !x86_gcc2"
 PROVIDES="
@@ -414,11 +415,11 @@ Four phases, each ending in something that can be installed and used. A phase is
 | Phase | Scope | Exit criteria |
 | --- | --- | --- |
 | 0. Skeleton | CMake project, `platform/` interface with POSIX and Haiku backends, CI on Linux, Haiku VM job, vendored libraries | `hl --version` runs on Linux and in the Haiku VM; CI green on both |
-| 1. MVP | JSON and logfmt scanners, level, field and time-range filters, field hiding, UTC and local time, default theme, colour, pager, multiple files and stdin, parallel pipeline | Golden tests pass; formats a 1 GiB JSON log on Haiku with all cores busy; output order identical to input |
+| 1. MVP | Plain-text pass-through, JSON and logfmt scanners, level, field and time-range filters, field hiding, UTC and local time, default theme, colour, pager, multiple files and stdin, parallel pipeline | Golden tests pass for plain and structured logs; formats a 1 GiB log on Haiku with all cores busy; output order identical to input |
 | 2. v1 | Query language, config files and `HL_*` variables, themes and overlays, field expansion, compressed input, `--allow-prefix`, named time zones, in-memory sort, follow mode with polling | Differential tests agree with upstream on the query corpus; `hl -F` merges two live logs in timestamp order; HaikuPorts recipe submitted |
 | 3. v2 | Persistent block index for `-s`, node-monitor watcher, shell completions, man page, benchmark report | Re-sorting an unchanged large file is much faster than the first run; benchmark table published with Haiku numbers |
 
-Within phase 1 the order of work is: model and scanners, formatter and theme engine, filters, pipeline, pager, CLI. This order lets each piece be tested alone before the pipeline ties them together.
+Within phase 1 the order of work is: streaming reader and plain-text pass-through, model and structured scanners, formatter and theme engine, filters, parallel pipeline, pager, then the full CLI. This establishes useful behaviour for every log file before adding format-specific features.
 
 ## Risks and open questions
 
