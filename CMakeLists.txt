@@ -24,12 +24,40 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(hl_platform PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-add_library(hl_io STATIC src/io/input.cpp)
+add_library(hl_io STATIC
+    src/io/entry_splitter.cpp
+    src/io/input.cpp
+)
 target_include_directories(hl_io PUBLIC src)
 target_compile_features(hl_io PUBLIC cxx_std_17)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(hl_io PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_library(hl_model STATIC
+    src/model/level.cpp
+    src/model/record.cpp
+)
+target_include_directories(hl_model PUBLIC src)
+target_compile_features(hl_model PUBLIC cxx_std_17)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(hl_model PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_library(hl_parse STATIC
+    src/parse/format.cpp
+    src/parse/json_scanner.cpp
+    src/parse/logfmt_scanner.cpp
+    src/parse/scanner.cpp
+)
+target_include_directories(hl_parse PUBLIC src)
+target_compile_features(hl_parse PUBLIC cxx_std_17)
+target_link_libraries(hl_parse PUBLIC hl_model)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(hl_parse PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 add_executable(hl src/main.cpp)
@@ -49,9 +77,17 @@ if(BUILD_TESTING)
     add_executable(input_test tests/input_test.cpp)
     target_link_libraries(input_test PRIVATE hl_io)
 
+    add_executable(format_test tests/format_test.cpp)
+    target_link_libraries(format_test PRIVATE hl_parse)
+
+    add_executable(scanner_test tests/scanner_test.cpp)
+    target_link_libraries(scanner_test PRIVATE hl_parse)
+
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         target_compile_options(platform_test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(input_test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(format_test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(scanner_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
     add_test(NAME hl_version COMMAND hl --version)
@@ -62,4 +98,6 @@ if(BUILD_TESTING)
 
     add_test(NAME platform COMMAND platform_test)
     add_test(NAME input COMMAND input_test)
+    add_test(NAME format COMMAND format_test)
+    add_test(NAME scanner COMMAND scanner_test)
 endif()

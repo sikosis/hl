@@ -7,8 +7,10 @@ formatting and filtering, but they are not required. The core remains portable
 across Haiku, Linux and macOS.
 
 The project is in early development. It currently streams ordinary logs from
-files or stdin without changing them. Structured formatting and filtering are
-not implemented yet.
+files or stdin without changing them. Entry splitting supports LF, CRLF, CR and
+NUL-delimited logs, and automatic text, JSON and logfmt classification is in
+place. JSON and logfmt fields are extracted into non-owning record views;
+structured formatting and filtering are not implemented yet.
 
 ## Build
 
