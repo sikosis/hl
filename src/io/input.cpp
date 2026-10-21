@@ -13,12 +13,12 @@ constexpr std::size_t kBufferSize = 256 * 1024;
 bool writePath(
     const std::string& path,
     std::istream& standardInput,
-    std::ostream& output,
-    std::ostream& error)
+    std::ostream& error,
+    const StreamHandler& handler)
 {
     if (path == "-") {
-        if (!copyStream(standardInput, output)) {
-            error << "hl: could not read stdin\n";
+        if (!handler(standardInput)) {
+            error << "hl: could not process stdin\n";
             return false;
         }
         return true;
@@ -30,8 +30,8 @@ bool writePath(
         return false;
     }
 
-    if (!copyStream(input, output)) {
-        error << "hl: could not read '" << path << "'\n";
+    if (!handler(input)) {
+        error << "hl: could not process '" << path << "'\n";
         return false;
     }
     return true;
@@ -58,23 +58,36 @@ bool copyStream(std::istream& input, std::ostream& output)
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
 
+bool visitInputs(
+    const std::vector<std::string>& paths,
+    std::istream& standardInput,
+    std::ostream& error,
+    const StreamHandler& handler)
+{
+    bool succeeded = true;
+    if (paths.empty()) {
+        return writePath("-", standardInput, error, handler);
+    }
+
+    for (const std::string& path : paths) {
+        if (!writePath(path, standardInput, error, handler)) {
+            succeeded = false;
+        }
+    }
+    return succeeded;
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
 bool writeInputs(
     const std::vector<std::string>& paths,
     std::istream& standardInput,
     std::ostream& output,
     std::ostream& error)
 {
-    bool succeeded = true;
-    if (paths.empty()) {
-        return writePath("-", standardInput, output, error);
-    }
-
-    for (const std::string& path : paths) {
-        if (!writePath(path, standardInput, output, error)) {
-            succeeded = false;
-        }
-    }
-    return succeeded;
+    const StreamHandler copy = [&](std::istream& input) {
+        return copyStream(input, output);
+    };
+    return visitInputs(paths, standardInput, error, copy);
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
 

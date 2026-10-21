@@ -10,7 +10,8 @@ The project is in early development. It currently streams ordinary logs from
 files or stdin without changing them. Entry splitting supports LF, CRLF, CR and
 NUL-delimited logs, and automatic text, JSON and logfmt classification is in
 place. JSON and logfmt fields are extracted into non-owning record views;
-structured formatting and filtering are not implemented yet.
+structured entries are rendered into compact readable lines while plain text is
+left unchanged. Filtering and coloured themes are not implemented yet.
 
 ## Build
 
@@ -27,6 +28,8 @@ build/hl system.log
 build/hl application.log server.log
 tail -f system.log | build/hl
 ```
+
+Use `--raw` (or `-r`) to copy every input byte without structured formatting.
 
 `build/hl --help` and `build/hl --version` provide command information.
 

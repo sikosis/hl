@@ -1,4 +1,5 @@
 #include "io/input.h"
+#include "pipeline/processor.h"
 
 #include <iostream>
 #include <string>
@@ -18,6 +19,7 @@ void printHelp(std::ostream& output)
            << "A fast viewer for text, JSON and logfmt logs.\n"
            << "\n"
            << "Options:\n"
+           << "  -r, --raw    Do not format structured entries\n"
            << "  --help       Print help\n"
            << "  -V, --version\n"
            << "               Print version\n";
@@ -30,6 +32,7 @@ int main(int argumentCount, char* arguments[])
 {
     std::vector<std::string> paths;
     bool optionsEnded = false;
+    bool raw = false;
     for (int index = 1; index < argumentCount; ++index) {
         const std::string_view argument(arguments[index]);
         if (!optionsEnded && argument == "--") {
@@ -44,6 +47,10 @@ int main(int argumentCount, char* arguments[])
             printHelp(std::cout);
             return 0;
         }
+        if (!optionsEnded && (argument == "-r" || argument == "--raw")) {
+            raw = true;
+            continue;
+        }
         if (!optionsEnded && argument.size() > 1 && argument.front() == '-') {
             std::cerr << "hl: unknown option '" << argument << "'\n";
             return 2;
@@ -52,6 +59,9 @@ int main(int argumentCount, char* arguments[])
         paths.emplace_back(argument);
     }
 
-    return hl::io::writeInputs(paths, std::cin, std::cout, std::cerr) ? 0 : 1;
+    const bool succeeded = raw
+        ? hl::io::writeInputs(paths, std::cin, std::cout, std::cerr)
+        : hl::pipeline::writeFormattedInputs(paths, std::cin, std::cout, std::cerr);
+    return succeeded ? 0 : 1;
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
