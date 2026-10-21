@@ -51,6 +51,7 @@ add_library(hl_parse STATIC
     src/parse/json_scanner.cpp
     src/parse/logfmt_scanner.cpp
     src/parse/scanner.cpp
+    src/parse/timestamp.cpp
 )
 target_include_directories(hl_parse PUBLIC src)
 target_compile_features(hl_parse PUBLIC cxx_std_17)
@@ -101,6 +102,9 @@ if(BUILD_TESTING)
     add_executable(scanner_test tests/scanner_test.cpp)
     target_link_libraries(scanner_test PRIVATE hl_parse)
 
+    add_executable(timestamp_test tests/timestamp_test.cpp)
+    target_link_libraries(timestamp_test PRIVATE hl_parse)
+
     add_executable(formatter_test tests/formatter_test.cpp)
     target_link_libraries(formatter_test PRIVATE hl_format hl_parse)
 
@@ -112,6 +116,7 @@ if(BUILD_TESTING)
         target_compile_options(input_test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(format_test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(scanner_test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(timestamp_test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(formatter_test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(pipeline_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
@@ -126,6 +131,7 @@ if(BUILD_TESTING)
     add_test(NAME input COMMAND input_test)
     add_test(NAME format COMMAND format_test)
     add_test(NAME scanner COMMAND scanner_test)
+    add_test(NAME timestamp COMMAND timestamp_test)
     add_test(NAME formatter COMMAND formatter_test)
     add_test(NAME pipeline COMMAND pipeline_test)
 endif()

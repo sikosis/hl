@@ -11,7 +11,9 @@ files or stdin without changing them. Entry splitting supports LF, CRLF, CR and
 NUL-delimited logs, and automatic text, JSON and logfmt classification is in
 place. JSON and logfmt fields are extracted into non-owning record views;
 structured entries are rendered into compact readable lines while plain text is
-left unchanged. Filtering and coloured themes are not implemented yet.
+left unchanged. RFC 3339 and Unix timestamps are normalised to UTC, and a
+built-in ANSI theme colours structured output when stdout is a terminal.
+Filtering and configurable themes are not implemented yet.
 
 ## Build
 
@@ -30,6 +32,8 @@ tail -f system.log | build/hl
 ```
 
 Use `--raw` (or `-r`) to copy every input byte without structured formatting.
+Colour defaults to automatic terminal detection. Use `-c` or `--color=always`
+to force it, and `--color=never` to disable it.
 
 `build/hl --help` and `build/hl --version` provide command information.
 

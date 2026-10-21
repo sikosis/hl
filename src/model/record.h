@@ -2,8 +2,10 @@
 #define HL_MODEL_RECORD_H
 
 #include "model/level.h"
+#include "model/timestamp.h"
 
 #include <cstdint>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -40,6 +42,7 @@ struct Field {
 struct Record {
     std::string_view source;
     RecordFormat format = RecordFormat::PlainText;
+    std::optional<Timestamp> timestamp;
     Level level = Level::Unknown;
     Value message;
     Value logger;

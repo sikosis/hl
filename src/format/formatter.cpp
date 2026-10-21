@@ -1,11 +1,127 @@
 #include "format/formatter.h"
 
 #include <cctype>
+#include <cstdio>
 #include <cstdint>
 #include <initializer_list>
 
 namespace hl::format {
 namespace {
+
+constexpr std::int64_t kNanosecondsPerSecond = 1'000'000'000;
+
+void appendStyle(const char* style, const FormatterOptions& options, std::string& output)
+{
+    if (options.colour) {
+        output += style;
+    }
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
+void appendReset(const FormatterOptions& options, std::string& output)
+{
+    if (options.colour) {
+        output += "\x1b[0m";
+    }
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
+const char* levelStyle(model::Level level)
+{
+    switch (level) {
+        case model::Level::Trace:
+            return "\x1b[2;37m";
+        case model::Level::Debug:
+            return "\x1b[36m";
+        case model::Level::Info:
+            return "\x1b[32m";
+        case model::Level::Warning:
+            return "\x1b[33m";
+        case model::Level::Error:
+            return "\x1b[31m";
+        case model::Level::Fatal:
+            return "\x1b[1;91m";
+        case model::Level::Unknown:
+            return "\x1b[37m";
+    }
+    return "\x1b[37m";
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
+const char* valueStyle(model::ValueKind kind)
+{
+    switch (kind) {
+        case model::ValueKind::String:
+            return "\x1b[32m";
+        case model::ValueKind::Number:
+            return "\x1b[34m";
+        case model::ValueKind::Bool:
+            return "\x1b[33m";
+        case model::ValueKind::Null:
+            return "\x1b[2;37m";
+        case model::ValueKind::Object:
+        case model::ValueKind::Array:
+            return "\x1b[35m";
+    }
+    return "\x1b[37m";
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
+void civilFromDays(std::int64_t days, int& year, unsigned& month, unsigned& day)
+{
+    days += 719468;
+    const std::int64_t era = (days >= 0 ? days : days - 146096) / 146097;
+    const unsigned dayOfEra = static_cast<unsigned>(days - era * 146097);
+    const unsigned yearOfEra = (dayOfEra - dayOfEra / 1460 + dayOfEra / 36524 - dayOfEra / 146096) / 365;
+    year = static_cast<int>(yearOfEra) + static_cast<int>(era * 400);
+    const unsigned dayOfYear = dayOfEra - (365 * yearOfEra + yearOfEra / 4 - yearOfEra / 100);
+    const unsigned monthPrime = (5 * dayOfYear + 2) / 153;
+    day = dayOfYear - (153 * monthPrime + 2) / 5 + 1;
+    month = static_cast<unsigned>(static_cast<int>(monthPrime) + (monthPrime < 10 ? 3 : -9));
+    year += month <= 2;
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
+void appendTimestamp(const model::Timestamp& timestamp, std::string& output)
+{
+    std::int64_t seconds = timestamp.nanoseconds / kNanosecondsPerSecond;
+    std::int64_t nanoseconds = timestamp.nanoseconds % kNanosecondsPerSecond;
+    if (nanoseconds < 0) {
+        nanoseconds += kNanosecondsPerSecond;
+        --seconds;
+    }
+    std::int64_t days = seconds / 86400;
+    std::int64_t secondsOfDay = seconds % 86400;
+    if (secondsOfDay < 0) {
+        secondsOfDay += 86400;
+        --days;
+    }
+
+    int year = 0;
+    unsigned month = 0;
+    unsigned day = 0;
+    civilFromDays(days, year, month, day);
+    const int hour = static_cast<int>(secondsOfDay / 3600);
+    const int minute = static_cast<int>((secondsOfDay % 3600) / 60);
+    const int second = static_cast<int>(secondsOfDay % 60);
+    const int milliseconds = static_cast<int>(nanoseconds / 1'000'000);
+    char buffer[32];
+    const int length = std::snprintf(
+        buffer,
+        sizeof(buffer),
+        "%04d-%02u-%02u %02d:%02d:%02d.%03d",
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        milliseconds);
+    if (length > 0) {
+        output.append(buffer, static_cast<std::size_t>(length));
+    }
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
 
 void appendUtf8(std::uint32_t codePoint, std::string& output)
 {
@@ -210,6 +326,19 @@ void appendValue(const model::Value& value, model::RecordFormat format, bool quo
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
 
+void appendStyledValue(
+    const model::Value& value,
+    model::RecordFormat format,
+    bool quoteStrings,
+    const FormatterOptions& options,
+    std::string& output)
+{
+    appendStyle(valueStyle(value.kind), options, output);
+    appendValue(value, format, quoteStrings, output);
+    appendReset(options, output);
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
 void appendPartSeparator(std::string& output)
 {
     if (!output.empty()) {
@@ -231,6 +360,9 @@ bool isKey(std::string_view key, std::initializer_list<std::string_view> candida
 
 bool isRenderedPredefined(const model::Field& field, const model::Record& record)
 {
+    if (record.timestamp.has_value() && isKey(field.key, {"time", "ts", "timestamp", "@timestamp"})) {
+        return true;
+    }
     if (record.level != model::Level::Unknown && isKey(field.key, {"level", "lvl", "severity"})) {
         return true;
     }
@@ -248,25 +380,43 @@ bool isRenderedPredefined(const model::Field& field, const model::Record& record
 
 void formatRecord(const model::Record& record, std::string& output)
 {
+    formatRecord(record, FormatterOptions {}, output);
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
+void formatRecord(const model::Record& record, const FormatterOptions& options, std::string& output)
+{
     output.clear();
     if (record.format == model::RecordFormat::PlainText) {
         output.append(record.source.data(), record.source.size());
         return;
     }
 
+    if (record.timestamp.has_value()) {
+        appendStyle("\x1b[2;36m", options, output);
+        appendTimestamp(record.timestamp.value(), output);
+        appendReset(options, output);
+    }
     if (record.level != model::Level::Unknown) {
+        appendPartSeparator(output);
+        appendStyle(levelStyle(record.level), options, output);
         output.push_back('[');
         output += model::levelName(record.level);
         output.push_back(']');
+        appendReset(options, output);
     }
     if (record.logger.defined) {
         appendPartSeparator(output);
+        appendStyle("\x1b[35m", options, output);
         appendValue(record.logger, record.format, false, output);
         output.push_back(':');
+        appendReset(options, output);
     }
     if (record.message.defined) {
         appendPartSeparator(output);
+        appendStyle("\x1b[37m", options, output);
         appendValue(record.message, record.format, false, output);
+        appendReset(options, output);
     }
 
     for (const model::Field& field : record.fields) {
@@ -274,14 +424,18 @@ void formatRecord(const model::Record& record, std::string& output)
             continue;
         }
         appendPartSeparator(output);
+        appendStyle("\x1b[36m", options, output);
         output.append(field.key.data(), field.key.size());
+        appendReset(options, output);
         output.push_back('=');
-        appendValue(field.value, record.format, true, output);
+        appendStyledValue(field.value, record.format, true, options, output);
     }
     if (record.caller.defined) {
         appendPartSeparator(output);
+        appendStyle("\x1b[36m", options, output);
         output += "caller=";
-        appendValue(record.caller, record.format, true, output);
+        appendReset(options, output);
+        appendStyledValue(record.caller, record.format, true, options, output);
     }
     if (output.empty()) {
         output.append(record.source.data(), record.source.size());

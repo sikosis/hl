@@ -17,7 +17,7 @@ constexpr std::size_t kBufferSize = 256 * 1024;
 
 } // namespace
 
-bool formatStream(std::istream& input, std::ostream& output)
+bool formatStream(std::istream& input, std::ostream& output, const ProcessorOptions& options)
 {
     io::EntrySplitter splitter;
     model::Record record;
@@ -25,7 +25,7 @@ bool formatStream(std::istream& input, std::ostream& output)
     const io::EntryHandler handleEntry = [&](std::string_view entry, std::string_view delimiter) {
         const parse::ScanStatus status = parse::scanEntry(entry, record);
         if (status == parse::ScanStatus::Structured) {
-            format::formatRecord(record, formatted);
+            format::formatRecord(record, options.formatter, formatted);
             output.write(formatted.data(), static_cast<std::streamsize>(formatted.size()));
         } else {
             output.write(entry.data(), static_cast<std::streamsize>(entry.size()));
@@ -52,10 +52,11 @@ bool writeFormattedInputs(
     const std::vector<std::string>& paths,
     std::istream& standardInput,
     std::ostream& output,
-    std::ostream& error)
+    std::ostream& error,
+    const ProcessorOptions& options)
 {
     const io::StreamHandler format = [&](std::istream& input) {
-        return formatStream(input, output);
+        return formatStream(input, output, options);
     };
     return io::visitInputs(paths, standardInput, error, format);
 }

@@ -6,6 +6,7 @@ void Record::reset(std::string_view newSource, RecordFormat newFormat)
 {
     source = newSource;
     format = newFormat;
+    timestamp.reset();
     level = Level::Unknown;
     message = {};
     logger = {};

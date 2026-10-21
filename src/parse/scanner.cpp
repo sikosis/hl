@@ -2,6 +2,7 @@
 
 #include "parse/format.h"
 #include "parse/scanner_internal.h"
+#include "parse/timestamp.h"
 
 #include <initializer_list>
 
@@ -24,7 +25,9 @@ bool isOneOf(std::string_view value, std::initializer_list<std::string_view> can
 void populatePredefinedFields(model::Record& record)
 {
     for (const model::Field& field : record.fields) {
-        if (isOneOf(field.key, {"level", "lvl", "severity"})) {
+        if (isOneOf(field.key, {"time", "ts", "timestamp", "@timestamp"})) {
+            record.timestamp = parseTimestamp(field.value.raw);
+        } else if (isOneOf(field.key, {"level", "lvl", "severity"})) {
             record.level = model::levelFromText(field.value.raw);
         } else if (isOneOf(field.key, {"message", "msg"})) {
             record.message = field.value;
