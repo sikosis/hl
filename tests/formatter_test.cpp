@@ -86,6 +86,33 @@ int main()
             == "\x1b[31m[error]\x1b[0m \x1b[37mfailed\x1b[0m \x1b[36mcount\x1b[0m=\x1b[34m2\x1b[0m",
         "coloured output does not match the built-in theme");
 
+    hl::model::Record visibilityRecord;
+    passed &= expect(
+        hl::parse::scanEntry(
+            "{\"message\":\"ready\",\"empty\":\"\",\"nothing\":null,\"object\":{},"
+            "\"array\":[],\"zero\":0,\"disabled\":false,\"code\":5}",
+            visibilityRecord) == hl::parse::ScanStatus::Structured,
+        "visibility record did not parse");
+
+    hl::format::FormatterOptions emptyOptions;
+    emptyOptions.hideEmptyFields = true;
+    std::string visibilityOutput;
+    hl::format::formatRecord(visibilityRecord, emptyOptions, visibilityOutput);
+    passed &= expect(
+        visibilityOutput == "ready zero=0 disabled=false code=5",
+        "empty fields were not hidden correctly");
+
+    hl::format::FormatterOptions hiddenOptions;
+    hiddenOptions.visibilityRules = {"*", "!message", "!code"};
+    hl::format::formatRecord(visibilityRecord, hiddenOptions, visibilityOutput);
+    passed &= expect(visibilityOutput == "ready code=5", "hide-all and reveal rules were applied incorrectly");
+
+    hiddenOptions.visibilityRules = {"message", "code", "!message"};
+    hl::format::formatRecord(visibilityRecord, hiddenOptions, visibilityOutput);
+    passed &= expect(
+        visibilityOutput == "ready empty=\"\" nothing=null object={} array=[] zero=0 disabled=false",
+        "ordered hide and reveal rules were applied incorrectly");
+
     return passed ? 0 : 1;
 }
 //---------------------------------------------------------------------------------------------------------------------------------//

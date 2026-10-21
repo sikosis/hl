@@ -72,6 +72,7 @@ endif()
 
 add_library(hl_query STATIC
     src/query/filter.cpp
+    src/query/json_path.cpp
     src/query/time_argument.cpp
 )
 target_include_directories(hl_query PUBLIC src)

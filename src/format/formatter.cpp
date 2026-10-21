@@ -358,6 +358,56 @@ bool isKey(std::string_view key, std::initializer_list<std::string_view> candida
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
 
+bool isHidden(std::string_view key, const FormatterOptions& options)
+{
+    bool hidden = false;
+    for (const std::string& ruleText : options.visibilityRules) {
+        std::string_view rule(ruleText);
+        bool reveal = false;
+        if (!rule.empty() && rule.front() == '!') {
+            reveal = true;
+            rule.remove_prefix(1);
+        }
+        if (rule == "*" || rule == key) {
+            hidden = !reveal;
+        }
+    }
+    return hidden;
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
+bool isEmpty(const model::Value& value)
+{
+    if (value.kind == model::ValueKind::Null) {
+        return true;
+    }
+    if (value.kind == model::ValueKind::String) {
+        return value.raw.empty();
+    }
+    if (value.kind != model::ValueKind::Object && value.kind != model::ValueKind::Array) {
+        return false;
+    }
+
+    const char closing = value.kind == model::ValueKind::Object ? '}' : ']';
+    if (value.raw.size() < 2 || value.raw.front() != (value.kind == model::ValueKind::Object ? '{' : '[')
+        || value.raw.back() != closing) {
+        return false;
+    }
+    for (std::size_t position = 1; position + 1 < value.raw.size(); ++position) {
+        if (std::isspace(static_cast<unsigned char>(value.raw[position])) == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
+bool shouldHide(std::string_view key, const model::Value& value, const FormatterOptions& options)
+{
+    return isHidden(key, options) || (options.hideEmptyFields && isEmpty(value));
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
 bool isRenderedPredefined(const model::Field& field, const model::Record& record)
 {
     if (record.timestamp.has_value() && isKey(field.key, {"time", "ts", "timestamp", "@timestamp"})) {
@@ -392,12 +442,12 @@ void formatRecord(const model::Record& record, const FormatterOptions& options, 
         return;
     }
 
-    if (record.timestamp.has_value()) {
+    if (record.timestamp.has_value() && !isHidden("time", options)) {
         appendStyle("\x1b[2;36m", options, output);
         appendTimestamp(record.timestamp.value(), output);
         appendReset(options, output);
     }
-    if (record.level != model::Level::Unknown) {
+    if (record.level != model::Level::Unknown && !isHidden("level", options)) {
         appendPartSeparator(output);
         appendStyle(levelStyle(record.level), options, output);
         output.push_back('[');
@@ -405,14 +455,14 @@ void formatRecord(const model::Record& record, const FormatterOptions& options, 
         output.push_back(']');
         appendReset(options, output);
     }
-    if (record.logger.defined) {
+    if (record.logger.defined && !shouldHide("logger", record.logger, options)) {
         appendPartSeparator(output);
         appendStyle("\x1b[35m", options, output);
         appendValue(record.logger, record.format, false, output);
         output.push_back(':');
         appendReset(options, output);
     }
-    if (record.message.defined) {
+    if (record.message.defined && !shouldHide("message", record.message, options)) {
         appendPartSeparator(output);
         appendStyle("\x1b[37m", options, output);
         appendValue(record.message, record.format, false, output);
@@ -420,7 +470,8 @@ void formatRecord(const model::Record& record, const FormatterOptions& options, 
     }
 
     for (const model::Field& field : record.fields) {
-        if (isRenderedPredefined(field, record)) {
+        if (isRenderedPredefined(field, record)
+            || shouldHide(field.key, field.value, options)) {
             continue;
         }
         appendPartSeparator(output);
@@ -430,14 +481,14 @@ void formatRecord(const model::Record& record, const FormatterOptions& options, 
         output.push_back('=');
         appendStyledValue(field.value, record.format, true, options, output);
     }
-    if (record.caller.defined) {
+    if (record.caller.defined && !shouldHide("caller", record.caller, options)) {
         appendPartSeparator(output);
         appendStyle("\x1b[36m", options, output);
         output += "caller=";
         appendReset(options, output);
         appendStyledValue(record.caller, record.format, true, options, output);
     }
-    if (output.empty()) {
+    if (output.empty() && record.fields.empty()) {
         output.append(record.source.data(), record.source.size());
     }
 }

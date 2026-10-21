@@ -48,6 +48,25 @@ contain). Add `?` after a field name, such as `request_id?=123`, to keep entries
 where that field is absent. Time bounds accept RFC 3339, Unix timestamps, `now`,
 `today`, `yesterday`, and relative values such as `-3h`, `-14d`, or `+1w`.
 
+Nested JSON paths work in field filters, including array indexes and wildcards:
+
+```sh
+build/hl -f request.method=POST application.log
+build/hl -f spans.[1].name=backend application.log
+build/hl -f spans.[].name=backend application.log
+```
+
+Hide fields with repeatable `-h`/`--hide` options or comma-separated rules.
+Rules are applied in order; prefix a name with `!` to reveal it again. `*`
+matches every field. Use `-e` to hide empty strings, objects, arrays and nulls,
+or `-E` to show them again.
+
+```sh
+build/hl -h caller,request_id application.log
+build/hl -h '*' -h '!message' -h '!code' application.log
+build/hl -e application.log
+```
+
 `build/hl --help` and `build/hl --version` provide command information.
 
 See [hl-design.md](hl-design.md) for the architecture, compatibility goals and

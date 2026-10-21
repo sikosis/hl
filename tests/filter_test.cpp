@@ -76,6 +76,32 @@ int main()
     passed &= expect(timeFilter.matches(errorRecord), "time range removed matching entry");
     passed &= expect(!timeFilter.matches(plain), "time range kept entry without a timestamp");
 
+    const hl::model::Record nested = scan(
+        "{\"message\":\"request\",\"request\":{\"method\":\"POST\",\"status\":201},"
+        "\"spans\":[{\"name\":\"frontend\"},{\"name\":\"backend\"}]}");
+    hl::query::Filter nestedFilter;
+    passed &= expect(hl::query::parseFieldFilter("request.method=POST", parsed, error), "nested object filter did not parse");
+    nestedFilter.addFieldFilter(parsed);
+    passed &= expect(hl::query::parseFieldFilter("spans.[].name=backend", parsed, error), "array wildcard filter did not parse");
+    nestedFilter.addFieldFilter(parsed);
+    passed &= expect(nestedFilter.matches(nested), "nested field filters removed matching entry");
+
+    hl::query::Filter indexedFilter;
+    passed &= expect(hl::query::parseFieldFilter("spans.[1].name=backend", parsed, error), "array index filter did not parse");
+    indexedFilter.addFieldFilter(parsed);
+    passed &= expect(indexedFilter.matches(nested), "array index filter removed matching entry");
+
+    hl::query::Filter wrongIndexFilter;
+    passed &= expect(hl::query::parseFieldFilter("spans.[0].name=backend", parsed, error), "wrong-index filter did not parse");
+    wrongIndexFilter.addFieldFilter(parsed);
+    passed &= expect(!wrongIndexFilter.matches(nested), "array index filter matched the wrong element");
+
+    const hl::model::Record dottedLogfmt = scan("request.method=PATCH message=updated");
+    hl::query::Filter dottedFilter;
+    passed &= expect(hl::query::parseFieldFilter("request.method=PATCH", parsed, error), "dotted-key filter did not parse");
+    dottedFilter.addFieldFilter(parsed);
+    passed &= expect(dottedFilter.matches(dottedLogfmt), "literal dotted logfmt key did not match");
+
     return passed ? 0 : 1;
 }
 //---------------------------------------------------------------------------------------------------------------------------------//

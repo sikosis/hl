@@ -44,6 +44,25 @@ bool parseColourMode(std::string_view value, ColourMode& mode)
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
 
+bool addVisibilityRules(std::string_view value, std::vector<std::string>& rules)
+{
+    std::size_t start = 0;
+    while (start <= value.size()) {
+        const std::size_t end = value.find(',', start);
+        const std::string_view rule = value.substr(start, end - start);
+        if (rule.empty() || rule == "!") {
+            return false;
+        }
+        rules.emplace_back(rule);
+        if (end == std::string_view::npos) {
+            break;
+        }
+        start = end + 1;
+    }
+    return true;
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
 void printHelp(std::ostream& output)
 {
     output << "Usage: hl [OPTIONS] [FILE]...\n"
@@ -58,6 +77,12 @@ void printHelp(std::ostream& output)
            << "               Add a field filter; ? keeps missing fields\n"
            << "  --since TIME Keep entries at or after TIME\n"
            << "  --until TIME Keep entries at or before TIME\n"
+           << "  -h, --hide FIELDS\n"
+           << "               Hide fields; use !FIELD to reveal and * for all\n"
+           << "  -e, --hide-empty-fields\n"
+           << "               Hide empty strings, objects, arrays and nulls\n"
+           << "  -E, --show-empty-fields\n"
+           << "               Show empty fields (default)\n"
            << "  -c           Always use ANSI colour\n"
            << "  --color [auto|always|never]\n"
            << "               Control ANSI colour (default: auto)\n"
@@ -75,6 +100,8 @@ int main(int argumentCount, char* arguments[])
     bool optionsEnded = false;
     bool raw = false;
     ColourMode colourMode = ColourMode::Auto;
+    bool hideEmptyFields = false;
+    std::vector<std::string> visibilityRules;
     hl::query::Filter filter;
     const std::int64_t nowNanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
@@ -94,6 +121,29 @@ int main(int argumentCount, char* arguments[])
         }
         if (!optionsEnded && (argument == "-r" || argument == "--raw")) {
             raw = true;
+            continue;
+        }
+        if (!optionsEnded && (argument == "-h" || argument == "--hide")) {
+            if (index + 1 >= argumentCount
+                || !addVisibilityRules(arguments[++index], visibilityRules)) {
+                std::cerr << "hl: " << argument << " needs a valid field list\n";
+                return 2;
+            }
+            continue;
+        }
+        if (!optionsEnded && argument.substr(0, 7) == "--hide=") {
+            if (!addVisibilityRules(argument.substr(7), visibilityRules)) {
+                std::cerr << "hl: --hide needs a valid field list\n";
+                return 2;
+            }
+            continue;
+        }
+        if (!optionsEnded && (argument == "-e" || argument == "--hide-empty-fields")) {
+            hideEmptyFields = true;
+            continue;
+        }
+        if (!optionsEnded && (argument == "-E" || argument == "--show-empty-fields")) {
+            hideEmptyFields = false;
             continue;
         }
         if (!optionsEnded && argument == "-c") {
@@ -210,6 +260,8 @@ int main(int argumentCount, char* arguments[])
     processorOptions.formatter.colour = colourMode == ColourMode::Always
         || (colourMode == ColourMode::Auto
             && hl::platform::terminalInfo(STDOUT_FILENO).colourDepth != hl::platform::ColourDepth::None);
+    processorOptions.formatter.hideEmptyFields = hideEmptyFields;
+    processorOptions.formatter.visibilityRules = std::move(visibilityRules);
     processorOptions.filter = std::move(filter);
     processorOptions.raw = raw;
 

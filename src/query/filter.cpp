@@ -1,56 +1,67 @@
 #include "query/filter.h"
 
+#include "query/json_path.h"
+
 #include <utility>
 
 namespace hl::query {
 namespace {
 
-struct FieldValue {
-    bool exists = false;
-    std::string_view text;
-};
-
-FieldValue valueText(const model::Value& value)
+void appendValueText(const model::Value& value, std::vector<std::string_view>& values)
 {
-    if (!value.defined) {
-        return {};
+    if (value.defined) {
+        values.push_back(value.implicit ? std::string_view("true") : value.raw);
     }
-    return {true, value.implicit ? std::string_view("true") : value.raw};
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
 
-FieldValue findSourceField(const model::Record& record, std::string_view name)
+bool appendExactSourceFields(
+    const model::Record& record,
+    std::string_view name,
+    std::vector<std::string_view>& values)
 {
     for (const model::Field& field : record.fields) {
         if (field.key == name) {
-            return valueText(field.value);
+            appendValueText(field.value, values);
         }
     }
-    return {};
+    return !values.empty();
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
 
-FieldValue findField(const model::Record& record, std::string_view name)
+void findFields(
+    const model::Record& record,
+    std::string_view name,
+    std::vector<std::string_view>& values)
 {
+    bool sourceOnly = false;
     if (!name.empty() && name.front() == '.') {
-        return findSourceField(record, name.substr(1));
+        sourceOnly = true;
+        name.remove_prefix(1);
     }
-    if (name == "level") {
+    if (!sourceOnly && name == "level") {
         if (record.level == model::Level::Unknown) {
-            return {};
+            return;
         }
-        return {true, model::levelName(record.level)};
+        values.push_back(model::levelName(record.level));
+        return;
     }
-    if (name == "message") {
-        return valueText(record.message);
+    if (!sourceOnly && name == "message") {
+        appendValueText(record.message, values);
+        return;
     }
-    if (name == "logger") {
-        return valueText(record.logger);
+    if (!sourceOnly && name == "logger") {
+        appendValueText(record.logger, values);
+        return;
     }
-    if (name == "caller") {
-        return valueText(record.caller);
+    if (!sourceOnly && name == "caller") {
+        appendValueText(record.caller, values);
+        return;
     }
-    return findSourceField(record, name);
+    if (appendExactSourceFields(record, name, values)) {
+        return;
+    }
+    resolveNestedField(record, name, values);
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
 
@@ -159,14 +170,22 @@ bool Filter::matches(const model::Record& record) const
         return false;
     }
     for (const FieldFilter& filter : fieldFilters_) {
-        const FieldValue actual = findField(record, filter.field);
-        if (!actual.exists) {
+        std::vector<std::string_view> values;
+        findFields(record, filter.field, values);
+        if (values.empty()) {
             if (filter.keepMissing) {
                 continue;
             }
             return false;
         }
-        if (!compare(actual.text, filter.comparison, filter.value)) {
+        bool matched = false;
+        for (const std::string_view value : values) {
+            if (compare(value, filter.comparison, filter.value)) {
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
             return false;
         }
     }
