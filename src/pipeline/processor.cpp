@@ -24,11 +24,14 @@ bool formatStream(std::istream& input, std::ostream& output, const ProcessorOpti
     std::string formatted;
     const io::EntryHandler handleEntry = [&](std::string_view entry, std::string_view delimiter) {
         const parse::ScanStatus status = parse::scanEntry(entry, record);
-        if (status == parse::ScanStatus::Structured) {
+        if (!options.filter.matches(record)) {
+            return true;
+        }
+        if (options.raw || status != parse::ScanStatus::Structured) {
+            output.write(entry.data(), static_cast<std::streamsize>(entry.size()));
+        } else {
             format::formatRecord(record, options.formatter, formatted);
             output.write(formatted.data(), static_cast<std::streamsize>(formatted.size()));
-        } else {
-            output.write(entry.data(), static_cast<std::streamsize>(entry.size()));
         }
         output.write(delimiter.data(), static_cast<std::streamsize>(delimiter.size()));
         return static_cast<bool>(output);

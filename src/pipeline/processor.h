@@ -2,6 +2,7 @@
 #define HL_PIPELINE_PROCESSOR_H
 
 #include "format/formatter.h"
+#include "query/filter.h"
 
 #include <iosfwd>
 #include <string>
@@ -11,6 +12,8 @@ namespace hl::pipeline {
 
 struct ProcessorOptions {
     format::FormatterOptions formatter;
+    query::Filter filter;
+    bool raw = false;
 };
 
 bool formatStream(std::istream& input, std::ostream& output, const ProcessorOptions& options = {});

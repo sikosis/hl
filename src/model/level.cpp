@@ -25,22 +25,23 @@ bool equalsIgnoringCase(std::string_view left, std::string_view right)
 
 Level levelFromText(std::string_view text)
 {
-    if (equalsIgnoringCase(text, "trace") || equalsIgnoringCase(text, "trc")) {
+    if (equalsIgnoringCase(text, "trace") || equalsIgnoringCase(text, "trc") || equalsIgnoringCase(text, "t")) {
         return Level::Trace;
     }
-    if (equalsIgnoringCase(text, "debug") || equalsIgnoringCase(text, "dbg")) {
+    if (equalsIgnoringCase(text, "debug") || equalsIgnoringCase(text, "dbg") || equalsIgnoringCase(text, "d")) {
         return Level::Debug;
     }
-    if (equalsIgnoringCase(text, "info") || equalsIgnoringCase(text, "information")) {
+    if (equalsIgnoringCase(text, "info") || equalsIgnoringCase(text, "information") || equalsIgnoringCase(text, "i")) {
         return Level::Info;
     }
-    if (equalsIgnoringCase(text, "warn") || equalsIgnoringCase(text, "warning")) {
+    if (equalsIgnoringCase(text, "warn") || equalsIgnoringCase(text, "warning") || equalsIgnoringCase(text, "w")) {
         return Level::Warning;
     }
-    if (equalsIgnoringCase(text, "error") || equalsIgnoringCase(text, "err")) {
+    if (equalsIgnoringCase(text, "error") || equalsIgnoringCase(text, "err") || equalsIgnoringCase(text, "e")) {
         return Level::Error;
     }
-    if (equalsIgnoringCase(text, "fatal") || equalsIgnoringCase(text, "critical") || equalsIgnoringCase(text, "crit")) {
+    if (equalsIgnoringCase(text, "fatal") || equalsIgnoringCase(text, "critical") || equalsIgnoringCase(text, "crit")
+        || equalsIgnoringCase(text, "f")) {
         return Level::Fatal;
     }
     return Level::Unknown;

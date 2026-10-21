@@ -35,6 +35,19 @@ Use `--raw` (or `-r`) to copy every input byte without structured formatting.
 Colour defaults to automatic terminal detection. Use `-c` or `--color=always`
 to force it, and `--color=never` to disable it.
 
+Filter structured logs by minimum level, fields, or time:
+
+```sh
+build/hl -l warning application.log
+build/hl -f component=api -f 'message~=failed' application.log
+build/hl --since=-3h --until=now application.log
+```
+
+Field filters support `=`, `!=`, `~=` (contains), and `!~=` (does not
+contain). Add `?` after a field name, such as `request_id?=123`, to keep entries
+where that field is absent. Time bounds accept RFC 3339, Unix timestamps, `now`,
+`today`, `yesterday`, and relative values such as `-3h`, `-14d`, or `+1w`.
+
 `build/hl --help` and `build/hl --version` provide command information.
 
 See [hl-design.md](hl-design.md) for the architecture, compatibility goals and

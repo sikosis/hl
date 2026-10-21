@@ -70,10 +70,22 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(hl_format PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+add_library(hl_query STATIC
+    src/query/filter.cpp
+    src/query/time_argument.cpp
+)
+target_include_directories(hl_query PUBLIC src)
+target_compile_features(hl_query PUBLIC cxx_std_17)
+target_link_libraries(hl_query PUBLIC hl_model hl_parse)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(hl_query PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 add_library(hl_pipeline STATIC src/pipeline/processor.cpp)
 target_include_directories(hl_pipeline PUBLIC src)
 target_compile_features(hl_pipeline PUBLIC cxx_std_17)
-target_link_libraries(hl_pipeline PUBLIC hl_format hl_io hl_parse)
+target_link_libraries(hl_pipeline PUBLIC hl_format hl_io hl_parse hl_query)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(hl_pipeline PRIVATE -Wall -Wextra -Wpedantic)
@@ -111,6 +123,12 @@ if(BUILD_TESTING)
     add_executable(pipeline_test tests/pipeline_test.cpp)
     target_link_libraries(pipeline_test PRIVATE hl_pipeline)
 
+    add_executable(filter_test tests/filter_test.cpp)
+    target_link_libraries(filter_test PRIVATE hl_query)
+
+    add_executable(time_argument_test tests/time_argument_test.cpp)
+    target_link_libraries(time_argument_test PRIVATE hl_query)
+
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         target_compile_options(platform_test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(input_test PRIVATE -Wall -Wextra -Wpedantic)
@@ -119,6 +137,8 @@ if(BUILD_TESTING)
         target_compile_options(timestamp_test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(formatter_test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(pipeline_test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(filter_test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(time_argument_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
     add_test(NAME hl_version COMMAND hl --version)
@@ -134,4 +154,6 @@ if(BUILD_TESTING)
     add_test(NAME timestamp COMMAND timestamp_test)
     add_test(NAME formatter COMMAND formatter_test)
     add_test(NAME pipeline COMMAND pipeline_test)
+    add_test(NAME filter COMMAND filter_test)
+    add_test(NAME time_argument COMMAND time_argument_test)
 endif()

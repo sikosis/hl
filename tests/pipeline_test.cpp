@@ -37,6 +37,16 @@ int main()
     const std::string nullInput("message=one\0plain text\0", 23);
     const std::string nullExpected("one\0plain text\0", 15);
     passed &= expectStream(nullInput, nullExpected);
+
+    std::istringstream filteredSource(
+        "level=info message=starting component=api\n"
+        "level=error message=failed component=worker\n"
+        "ordinary text\n");
+    std::ostringstream filteredOutput;
+    hl::pipeline::ProcessorOptions filteredOptions;
+    filteredOptions.filter.setMinimumLevel(hl::model::Level::Warning);
+    passed &= hl::pipeline::formatStream(filteredSource, filteredOutput, filteredOptions);
+    passed &= filteredOutput.str() == "[error] failed component=worker\n";
     return passed ? 0 : 1;
 }
 //---------------------------------------------------------------------------------------------------------------------------------//

@@ -1,10 +1,15 @@
 #include "io/input.h"
 #include "pipeline/processor.h"
 #include "platform/platform.h"
+#include "query/filter.h"
+#include "query/time_argument.h"
 
+#include <chrono>
+#include <cstdint>
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <unistd.h>
@@ -47,6 +52,12 @@ void printHelp(std::ostream& output)
            << "\n"
            << "Options:\n"
            << "  -r, --raw    Do not format structured entries\n"
+           << "  -l, --level LEVEL\n"
+           << "               Keep entries at or above LEVEL\n"
+           << "  -f, --filter FIELD[?](=|!=|~=|!~=)VALUE\n"
+           << "               Add a field filter; ? keeps missing fields\n"
+           << "  --since TIME Keep entries at or after TIME\n"
+           << "  --until TIME Keep entries at or before TIME\n"
            << "  -c           Always use ANSI colour\n"
            << "  --color [auto|always|never]\n"
            << "               Control ANSI colour (default: auto)\n"
@@ -64,6 +75,9 @@ int main(int argumentCount, char* arguments[])
     bool optionsEnded = false;
     bool raw = false;
     ColourMode colourMode = ColourMode::Auto;
+    hl::query::Filter filter;
+    const std::int64_t nowNanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
     for (int index = 1; index < argumentCount; ++index) {
         const std::string_view argument(arguments[index]);
         if (!optionsEnded && argument == "--") {
@@ -104,6 +118,86 @@ int main(int argumentCount, char* arguments[])
             }
             continue;
         }
+        if (!optionsEnded && (argument == "-l" || argument == "--level")) {
+            if (index + 1 >= argumentCount) {
+                std::cerr << "hl: " << argument << " needs a level\n";
+                return 2;
+            }
+            const hl::model::Level level = hl::model::levelFromText(arguments[++index]);
+            if (level == hl::model::Level::Unknown) {
+                std::cerr << "hl: unknown level '" << arguments[index] << "'\n";
+                return 2;
+            }
+            filter.setMinimumLevel(level);
+            continue;
+        }
+        if (!optionsEnded && argument.substr(0, 8) == "--level=") {
+            const hl::model::Level level = hl::model::levelFromText(argument.substr(8));
+            if (level == hl::model::Level::Unknown) {
+                std::cerr << "hl: unknown level '" << argument.substr(8) << "'\n";
+                return 2;
+            }
+            filter.setMinimumLevel(level);
+            continue;
+        }
+        if (!optionsEnded && (argument == "-f" || argument == "--filter")) {
+            if (index + 1 >= argumentCount) {
+                std::cerr << "hl: " << argument << " needs an expression\n";
+                return 2;
+            }
+            hl::query::FieldFilter fieldFilter;
+            std::string error;
+            const std::string_view expression(arguments[++index]);
+            if (!hl::query::parseFieldFilter(expression, fieldFilter, error)) {
+                std::cerr << "hl: invalid field filter '" << expression << "': " << error << '\n';
+                return 2;
+            }
+            filter.addFieldFilter(std::move(fieldFilter));
+            continue;
+        }
+        if (!optionsEnded && argument.substr(0, 9) == "--filter=") {
+            hl::query::FieldFilter fieldFilter;
+            std::string error;
+            if (!hl::query::parseFieldFilter(argument.substr(9), fieldFilter, error)) {
+                std::cerr << "hl: invalid field filter '" << argument.substr(9) << "': " << error << '\n';
+                return 2;
+            }
+            filter.addFieldFilter(std::move(fieldFilter));
+            continue;
+        }
+        if (!optionsEnded && (argument == "--since" || argument == "--until")) {
+            if (index + 1 >= argumentCount) {
+                std::cerr << "hl: " << argument << " needs a time\n";
+                return 2;
+            }
+            const std::string_view value(arguments[++index]);
+            const auto timestamp = hl::query::parseTimeArgument(value, nowNanoseconds);
+            if (!timestamp.has_value()) {
+                std::cerr << "hl: invalid time '" << value << "'\n";
+                return 2;
+            }
+            if (argument == "--since") {
+                filter.setSince(timestamp.value());
+            } else {
+                filter.setUntil(timestamp.value());
+            }
+            continue;
+        }
+        if (!optionsEnded && (argument.substr(0, 8) == "--since=" || argument.substr(0, 8) == "--until=")) {
+            const bool since = argument.substr(0, 8) == "--since=";
+            const std::string_view value = argument.substr(8);
+            const auto timestamp = hl::query::parseTimeArgument(value, nowNanoseconds);
+            if (!timestamp.has_value()) {
+                std::cerr << "hl: invalid time '" << value << "'\n";
+                return 2;
+            }
+            if (since) {
+                filter.setSince(timestamp.value());
+            } else {
+                filter.setUntil(timestamp.value());
+            }
+            continue;
+        }
         if (!optionsEnded && argument.size() > 1 && argument.front() == '-') {
             std::cerr << "hl: unknown option '" << argument << "'\n";
             return 2;
@@ -116,8 +210,10 @@ int main(int argumentCount, char* arguments[])
     processorOptions.formatter.colour = colourMode == ColourMode::Always
         || (colourMode == ColourMode::Auto
             && hl::platform::terminalInfo(STDOUT_FILENO).colourDepth != hl::platform::ColourDepth::None);
+    processorOptions.filter = std::move(filter);
+    processorOptions.raw = raw;
 
-    const bool succeeded = raw
+    const bool succeeded = raw && !processorOptions.filter.isActive()
         ? hl::io::writeInputs(paths, std::cin, std::cout, std::cerr)
         : hl::pipeline::writeFormattedInputs(paths, std::cin, std::cout, std::cerr, processorOptions);
     return succeeded ? 0 : 1;
