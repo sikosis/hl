@@ -113,6 +113,34 @@ int main()
         visibilityOutput == "ready empty=\"\" nothing=null object={} array=[] zero=0 disabled=false",
         "ordered hide and reveal rules were applied incorrectly");
 
+    hl::model::Record timeRecord;
+    passed &= expect(
+        hl::parse::scanEntry(
+            "{\"timestamp\":\"2026-10-20T12:34:56.123456789Z\",\"message\":\"ready\"}",
+            timeRecord) == hl::parse::ScanStatus::Structured,
+        "custom-time record did not parse");
+    hl::format::FormatterOptions timeOptions;
+    timeOptions.timeFormat = "%Y/%m/%d %H:%M:%S.%6N";
+    hl::format::formatRecord(timeRecord, timeOptions, visibilityOutput);
+    passed &= expect(
+        visibilityOutput == "2026/10/20 12:34:56.123456 ready",
+        "custom time format was not applied");
+
+    hl::model::Record expansionRecord;
+    passed &= expect(
+        hl::parse::scanEntry(
+            "prefix: {\"message\":\"ready\",\"detail\":\"first\\nsecond\",\"code\":5}",
+            expansionRecord,
+            hl::parse::InputFormat::Auto,
+            true) == hl::parse::ScanStatus::Structured,
+        "expansion record did not parse");
+    hl::format::FormatterOptions expansionOptions;
+    expansionOptions.expansion = hl::format::Expansion::Auto;
+    hl::format::formatRecord(expansionRecord, expansionOptions, visibilityOutput);
+    passed &= expect(
+        visibilityOutput == "prefix: ready\n  detail=\"first\nsecond\" code=5",
+        "automatic expansion or prefix formatting was incorrect");
+
     return passed ? 0 : 1;
 }
 //---------------------------------------------------------------------------------------------------------------------------------//

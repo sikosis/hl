@@ -63,6 +63,8 @@ InputFormat detectFormat(std::string_view entry)
 std::string_view formatName(InputFormat format)
 {
     switch (format) {
+        case InputFormat::Auto:
+            return "auto";
         case InputFormat::PlainText:
             return "text";
         case InputFormat::Json:
@@ -71,6 +73,28 @@ std::string_view formatName(InputFormat format)
             return "logfmt";
     }
     return "text";
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
+bool parseInputFormat(std::string_view text, InputFormat& format)
+{
+    if (text == "auto") {
+        format = InputFormat::Auto;
+        return true;
+    }
+    if (text == "text" || text == "plain") {
+        format = InputFormat::PlainText;
+        return true;
+    }
+    if (text == "json") {
+        format = InputFormat::Json;
+        return true;
+    }
+    if (text == "logfmt") {
+        format = InputFormat::Logfmt;
+        return true;
+    }
+    return false;
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
 

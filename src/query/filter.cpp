@@ -147,9 +147,16 @@ void Filter::addFieldFilter(FieldFilter filter)
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
 
+void Filter::addQuery(Query query)
+{
+    queries_.push_back(std::move(query));
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
 bool Filter::isActive() const
 {
-    return minimumLevel_.has_value() || since_.has_value() || until_.has_value() || !fieldFilters_.empty();
+    return minimumLevel_.has_value() || since_.has_value() || until_.has_value()
+        || !fieldFilters_.empty() || !queries_.empty();
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
 
@@ -186,6 +193,11 @@ bool Filter::matches(const model::Record& record) const
             }
         }
         if (!matched) {
+            return false;
+        }
+    }
+    for (const Query& query : queries_) {
+        if (!query.matches(record)) {
             return false;
         }
     }

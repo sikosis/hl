@@ -42,15 +42,44 @@ void populatePredefinedFields(model::Record& record)
 
 ScanStatus scanEntry(std::string_view entry, model::Record& record)
 {
-    switch (detectFormat(entry)) {
+    return scanEntry(entry, record, InputFormat::Auto, false);
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
+ScanStatus scanEntry(
+    std::string_view entry,
+    model::Record& record,
+    InputFormat inputFormat,
+    bool allowPrefix)
+{
+    std::string_view structuredEntry = entry;
+    std::string_view prefix;
+    if (allowPrefix && inputFormat != InputFormat::PlainText) {
+        const std::size_t objectStart = entry.find('{');
+        if (objectStart != std::string_view::npos && objectStart > 0) {
+            prefix = entry.substr(0, objectStart);
+            structuredEntry = entry.substr(objectStart);
+        }
+    }
+
+    const InputFormat detected = inputFormat == InputFormat::Auto
+        ? detectFormat(structuredEntry)
+        : inputFormat;
+    switch (detected) {
+        case InputFormat::Auto:
+            break;
         case InputFormat::Json:
-            if (scanJson(entry, record)) {
+            if (scanJson(structuredEntry, record)) {
+                record.source = entry;
+                record.prefix = prefix;
                 return ScanStatus::Structured;
             }
             record.reset(entry, model::RecordFormat::PlainText);
             return ScanStatus::Malformed;
         case InputFormat::Logfmt:
-            if (scanLogfmt(entry, record)) {
+            if (scanLogfmt(structuredEntry, record)) {
+                record.source = entry;
+                record.prefix = prefix;
                 return ScanStatus::Structured;
             }
             record.reset(entry, model::RecordFormat::PlainText);

@@ -41,6 +41,7 @@ struct Field {
 
 struct Record {
     std::string_view source;
+    std::string_view prefix;
     RecordFormat format = RecordFormat::PlainText;
     std::optional<Timestamp> timestamp;
     Level level = Level::Unknown;

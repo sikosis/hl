@@ -151,6 +151,12 @@ std::optional<std::string> findPager()
         }
     }
 
+    if (environmentValue("HL_HUM") != "never") {
+        const auto hum = findExecutable("hum");
+        if (hum.has_value()) {
+            return hum.value() + " pager";
+        }
+    }
     return findExecutable("less");
 }
 //---------------------------------------------------------------------------------------------------------------------------------//

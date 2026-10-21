@@ -2,6 +2,7 @@
 #define HL_PARSE_SCANNER_H
 
 #include "model/record.h"
+#include "parse/format.h"
 
 #include <cstdint>
 #include <string_view>
@@ -17,6 +18,11 @@ enum class ScanStatus : std::uint8_t {
 bool scanJson(std::string_view entry, model::Record& record);
 bool scanLogfmt(std::string_view entry, model::Record& record);
 ScanStatus scanEntry(std::string_view entry, model::Record& record);
+ScanStatus scanEntry(
+    std::string_view entry,
+    model::Record& record,
+    InputFormat inputFormat,
+    bool allowPrefix = false);
 
 } // namespace hl::parse
 

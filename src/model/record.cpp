@@ -5,6 +5,7 @@ namespace hl::model {
 void Record::reset(std::string_view newSource, RecordFormat newFormat)
 {
     source = newSource;
+    prefix = {};
     format = newFormat;
     timestamp.reset();
     level = Level::Unknown;

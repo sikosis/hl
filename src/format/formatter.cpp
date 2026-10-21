@@ -3,6 +3,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdint>
+#include <ctime>
 #include <initializer_list>
 
 namespace hl::format {
@@ -67,58 +68,58 @@ const char* valueStyle(model::ValueKind kind)
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
 
-void civilFromDays(std::int64_t days, int& year, unsigned& month, unsigned& day)
+void appendFraction(std::int64_t nanoseconds, unsigned digits, std::string& output)
 {
-    days += 719468;
-    const std::int64_t era = (days >= 0 ? days : days - 146096) / 146097;
-    const unsigned dayOfEra = static_cast<unsigned>(days - era * 146097);
-    const unsigned yearOfEra = (dayOfEra - dayOfEra / 1460 + dayOfEra / 36524 - dayOfEra / 146096) / 365;
-    year = static_cast<int>(yearOfEra) + static_cast<int>(era * 400);
-    const unsigned dayOfYear = dayOfEra - (365 * yearOfEra + yearOfEra / 4 - yearOfEra / 100);
-    const unsigned monthPrime = (5 * dayOfYear + 2) / 153;
-    day = dayOfYear - (153 * monthPrime + 2) / 5 + 1;
-    month = static_cast<unsigned>(static_cast<int>(monthPrime) + (monthPrime < 10 ? 3 : -9));
-    year += month <= 2;
+    if (nanoseconds < 0) {
+        nanoseconds += kNanosecondsPerSecond;
+    }
+    char buffer[10];
+    std::snprintf(buffer, sizeof(buffer), "%09lld", static_cast<long long>(nanoseconds));
+    output.append(buffer, digits);
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
 
-void appendTimestamp(const model::Timestamp& timestamp, std::string& output)
+void appendTimestamp(
+    const model::Timestamp& timestamp,
+    const FormatterOptions& options,
+    std::string& output)
 {
     std::int64_t seconds = timestamp.nanoseconds / kNanosecondsPerSecond;
-    std::int64_t nanoseconds = timestamp.nanoseconds % kNanosecondsPerSecond;
+    const std::int64_t nanoseconds = timestamp.nanoseconds % kNanosecondsPerSecond;
     if (nanoseconds < 0) {
-        nanoseconds += kNanosecondsPerSecond;
         --seconds;
     }
-    std::int64_t days = seconds / 86400;
-    std::int64_t secondsOfDay = seconds % 86400;
-    if (secondsOfDay < 0) {
-        secondsOfDay += 86400;
-        --days;
+
+    const std::time_t time = static_cast<std::time_t>(seconds);
+    std::tm parts {};
+    if (options.localTime) {
+        localtime_r(&time, &parts);
+    } else {
+        gmtime_r(&time, &parts);
     }
 
-    int year = 0;
-    unsigned month = 0;
-    unsigned day = 0;
-    civilFromDays(days, year, month, day);
-    const int hour = static_cast<int>(secondsOfDay / 3600);
-    const int minute = static_cast<int>((secondsOfDay % 3600) / 60);
-    const int second = static_cast<int>(secondsOfDay % 60);
-    const int milliseconds = static_cast<int>(nanoseconds / 1'000'000);
-    char buffer[32];
-    const int length = std::snprintf(
-        buffer,
-        sizeof(buffer),
-        "%04d-%02u-%02u %02d:%02d:%02d.%03d",
-        year,
-        month,
-        day,
-        hour,
-        minute,
-        second,
-        milliseconds);
-    if (length > 0) {
-        output.append(buffer, static_cast<std::size_t>(length));
+    for (std::size_t position = 0; position < options.timeFormat.size(); ++position) {
+        if (options.timeFormat[position] != '%' || position + 1 >= options.timeFormat.size()) {
+            output.push_back(options.timeFormat[position]);
+            continue;
+        }
+        if (position + 2 < options.timeFormat.size()
+            && (options.timeFormat[position + 1] == '3'
+                || options.timeFormat[position + 1] == '6'
+                || options.timeFormat[position + 1] == '9')
+            && options.timeFormat[position + 2] == 'N') {
+            appendFraction(nanoseconds, static_cast<unsigned>(options.timeFormat[position + 1] - '0'), output);
+            position += 2;
+            continue;
+        }
+
+        char directive[3] {'%', options.timeFormat[position + 1], '\0'};
+        char buffer[128];
+        const std::size_t length = std::strftime(buffer, sizeof(buffer), directive, &parts);
+        if (length > 0) {
+            output.append(buffer, length);
+        }
+        ++position;
     }
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
@@ -206,6 +207,7 @@ void appendDecodedString(
     std::string_view raw,
     model::RecordFormat format,
     bool protectQuotedValue,
+    bool preserveLineBreaks,
     std::string& output)
 {
     for (std::size_t position = 0; position < raw.size(); ++position) {
@@ -218,10 +220,10 @@ void appendDecodedString(
         const char escape = raw[++position];
         switch (escape) {
             case 'n':
-                output += "\\n";
+                output += preserveLineBreaks ? "\n" : "\\n";
                 break;
             case 'r':
-                output += "\\r";
+                output += preserveLineBreaks ? "\r" : "\\r";
                 break;
             case 't':
                 output += "\\t";
@@ -304,7 +306,29 @@ bool needsQuotes(std::string_view raw)
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
 
-void appendValue(const model::Value& value, model::RecordFormat format, bool quoteStrings, std::string& output)
+bool containsLineBreak(const model::Value& value)
+{
+    return value.raw.find('\n') != std::string_view::npos
+        || value.raw.find('\r') != std::string_view::npos
+        || value.raw.find("\\n") != std::string_view::npos
+        || value.raw.find("\\r") != std::string_view::npos;
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
+bool expandValue(const model::Value& value, const FormatterOptions& options)
+{
+    return options.expansion == Expansion::Always
+        || options.expansion == Expansion::Inline
+        || (options.expansion == Expansion::Auto && containsLineBreak(value));
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
+void appendValue(
+    const model::Value& value,
+    model::RecordFormat format,
+    bool quoteStrings,
+    bool preserveLineBreaks,
+    std::string& output)
 {
     if (value.implicit) {
         output += "true";
@@ -319,7 +343,7 @@ void appendValue(const model::Value& value, model::RecordFormat format, bool quo
     if (quoted) {
         output.push_back('"');
     }
-    appendDecodedString(value.raw, format, quoted, output);
+    appendDecodedString(value.raw, format, quoted, preserveLineBreaks, output);
     if (quoted) {
         output.push_back('"');
     }
@@ -334,14 +358,14 @@ void appendStyledValue(
     std::string& output)
 {
     appendStyle(valueStyle(value.kind), options, output);
-    appendValue(value, format, quoteStrings, output);
+    appendValue(value, format, quoteStrings, expandValue(value, options), output);
     appendReset(options, output);
 }
 //---------------------------------------------------------------------------------------------------------------------------------//
 
 void appendPartSeparator(std::string& output)
 {
-    if (!output.empty()) {
+    if (!output.empty() && std::isspace(static_cast<unsigned char>(output.back())) == 0) {
         output.push_back(' ');
     }
 }
@@ -428,6 +452,28 @@ bool isRenderedPredefined(const model::Field& field, const model::Record& record
 
 } // namespace
 
+bool parseExpansion(std::string_view text, Expansion& expansion)
+{
+    if (text == "never") {
+        expansion = Expansion::Never;
+        return true;
+    }
+    if (text == "inline") {
+        expansion = Expansion::Inline;
+        return true;
+    }
+    if (text == "auto") {
+        expansion = Expansion::Auto;
+        return true;
+    }
+    if (text == "always") {
+        expansion = Expansion::Always;
+        return true;
+    }
+    return false;
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
 void formatRecord(const model::Record& record, std::string& output)
 {
     formatRecord(record, FormatterOptions {}, output);
@@ -442,9 +488,12 @@ void formatRecord(const model::Record& record, const FormatterOptions& options, 
         return;
     }
 
+    output.append(record.prefix.data(), record.prefix.size());
+
     if (record.timestamp.has_value() && !isHidden("time", options)) {
+        appendPartSeparator(output);
         appendStyle("\x1b[2;36m", options, output);
-        appendTimestamp(record.timestamp.value(), output);
+        appendTimestamp(record.timestamp.value(), options, output);
         appendReset(options, output);
     }
     if (record.level != model::Level::Unknown && !isHidden("level", options)) {
@@ -458,14 +507,14 @@ void formatRecord(const model::Record& record, const FormatterOptions& options, 
     if (record.logger.defined && !shouldHide("logger", record.logger, options)) {
         appendPartSeparator(output);
         appendStyle("\x1b[35m", options, output);
-        appendValue(record.logger, record.format, false, output);
+        appendValue(record.logger, record.format, false, expandValue(record.logger, options), output);
         output.push_back(':');
         appendReset(options, output);
     }
     if (record.message.defined && !shouldHide("message", record.message, options)) {
         appendPartSeparator(output);
         appendStyle("\x1b[37m", options, output);
-        appendValue(record.message, record.format, false, output);
+        appendValue(record.message, record.format, false, expandValue(record.message, options), output);
         appendReset(options, output);
     }
 
@@ -474,7 +523,13 @@ void formatRecord(const model::Record& record, const FormatterOptions& options, 
             || shouldHide(field.key, field.value, options)) {
             continue;
         }
-        appendPartSeparator(output);
+        const bool expanded = options.expansion == Expansion::Always
+            || (options.expansion == Expansion::Auto && containsLineBreak(field.value));
+        if (expanded && !output.empty()) {
+            output += "\n  ";
+        } else {
+            appendPartSeparator(output);
+        }
         appendStyle("\x1b[36m", options, output);
         output.append(field.key.data(), field.key.size());
         appendReset(options, output);

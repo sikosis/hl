@@ -100,6 +100,19 @@ int main()
         "malformed logfmt was not reported");
     passed &= expect(record.format == hl::model::RecordFormat::PlainText, "malformed logfmt did not fall back to plain text");
 
+    const std::string prefixed = "service: {\"message\":\"ready\"}";
+    passed &= expect(
+        hl::parse::scanEntry(prefixed, record, hl::parse::InputFormat::Auto, true)
+            == hl::parse::ScanStatus::Structured,
+        "prefixed JSON was not recognised when prefixes were allowed");
+    passed &= expect(record.prefix == "service: ", "JSON prefix was not retained");
+    passed &= expect(record.source == prefixed, "prefixed JSON source changed");
+
+    passed &= expect(
+        hl::parse::scanEntry("key=value", record, hl::parse::InputFormat::PlainText)
+            == hl::parse::ScanStatus::PlainText,
+        "forced text input was parsed as structured data");
+
     return passed ? 0 : 1;
 }
 //---------------------------------------------------------------------------------------------------------------------------------//

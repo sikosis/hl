@@ -103,6 +103,25 @@ int main()
     };
     passed &= expect(!rejectedSplitter.push("entry\n", reject), "handler rejection was ignored");
 
+    hl::io::Delimiter parsedDelimiter = hl::io::Delimiter::Auto;
+    passed &= expect(
+        hl::io::parseDelimiter("crlf", parsedDelimiter)
+            && parsedDelimiter == hl::io::Delimiter::CarriageReturnLineFeed,
+        "CRLF delimiter option was not parsed");
+    passed &= expect(!hl::io::parseDelimiter("unknown", parsedDelimiter), "invalid delimiter was accepted");
+
+    hl::io::EntrySplitter boundedSplitter(hl::io::Delimiter::LineFeed, 4);
+    entries.clear();
+    delimiters.clear();
+    passed &= expect(boundedSplitter.push("abcdefgh\n", collect), "bounded splitter rejected input");
+    passed &= expect(boundedSplitter.finish(collect), "bounded splitter finish failed");
+    passed &= expect(
+        entries == std::vector<std::string>({"abcd", "efgh"}),
+        "oversized entry was not split at the configured bound");
+    passed &= expect(
+        delimiters == std::vector<std::string>({"", "\n"}),
+        "oversized entry delimiter was not kept on the final chunk");
+
     return passed ? 0 : 1;
 }
 //---------------------------------------------------------------------------------------------------------------------------------//

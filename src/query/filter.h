@@ -4,6 +4,7 @@
 #include "model/level.h"
 #include "model/record.h"
 #include "model/timestamp.h"
+#include "query/query.h"
 
 #include <cstdint>
 #include <optional>
@@ -35,6 +36,7 @@ public:
     void setSince(model::Timestamp timestamp);
     void setUntil(model::Timestamp timestamp);
     void addFieldFilter(FieldFilter filter);
+    void addQuery(Query query);
 
     bool isActive() const;
     bool matches(const model::Record& record) const;
@@ -44,6 +46,7 @@ private:
     std::optional<model::Timestamp> since_;
     std::optional<model::Timestamp> until_;
     std::vector<FieldFilter> fieldFilters_;
+    std::vector<Query> queries_;
 };
 
 } // namespace hl::query

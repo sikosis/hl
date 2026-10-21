@@ -6,14 +6,13 @@ well as structured JSON and logfmt logs. Structured formats enable richer field
 formatting and filtering, but they are not required. The core remains portable
 across Haiku, Linux and macOS.
 
-The project is in early development. It currently streams ordinary logs from
-files or stdin without changing them. Entry splitting supports LF, CRLF, CR and
-NUL-delimited logs, and automatic text, JSON and logfmt classification is in
-place. JSON and logfmt fields are extracted into non-owning record views;
-structured entries are rendered into compact readable lines while plain text is
-left unchanged. RFC 3339 and Unix timestamps are normalised to UTC, and a
-built-in ANSI theme colours structured output when stdout is a terminal.
-Filtering and configurable themes are not implemented yet.
+The project is in active development. It streams ordinary logs from files or
+stdin and automatically recognises text, JSON and logfmt entries. Structured
+entries gain readable formatting, level/field/time/query filtering and nested
+JSON paths, while plain text remains usable. The ordered worker pipeline uses
+multiple processor cores without reordering entries. gzip, bzip2, xz and zstd
+files are decompressed automatically when the corresponding command is
+installed.
 
 ## Build
 
@@ -29,6 +28,7 @@ Run it with a file, several files, or stdin:
 build/hl system.log
 build/hl application.log server.log
 tail -f system.log | build/hl
+build/hl application.log.gz
 ```
 
 Use `--raw` (or `-r`) to copy every input byte without structured formatting.
@@ -41,6 +41,7 @@ Filter structured logs by minimum level, fields, or time:
 build/hl -l warning application.log
 build/hl -f component=api -f 'message~=failed' application.log
 build/hl --since=-3h --until=now application.log
+build/hl -q 'level = error and (status >= 500 or exists(exception))' application.log
 ```
 
 Field filters support `=`, `!=`, `~=` (contains), and `!~=` (does not
@@ -66,6 +67,59 @@ build/hl -h caller,request_id application.log
 build/hl -h '*' -h '!message' -h '!code' application.log
 build/hl -e application.log
 ```
+
+Force an input format or delimiter, tolerate a prefix before JSON, or merge
+several files chronologically:
+
+```sh
+build/hl --input-format logfmt application.log
+build/hl --delimiter nul --output-delimiter lf records.bin
+build/hl --allow-prefix prefixed-json.log
+build/hl --sort api.log worker.log
+```
+
+Timestamp output supports normal `strftime` conversions plus `%3N`, `%6N` and
+`%9N` fractions. UTC is the default; `-L` selects local time and `-Z` accepts a
+system time-zone name.
+
+```sh
+build/hl -t '%H:%M:%S.%6N' application.log
+build/hl -Z Australia/Brisbane application.log
+build/hl -x auto application.log
+```
+
+Paging is automatic on a terminal. `-P` disables it; `--paging=always` forces
+it. Pager selection uses `HL_PAGER`, then `PAGER`, then `hum pager` when hum is
+available, then `less`. Use `-o FILE` for direct output. Tuning options include
+`-C/--concurrency`, `--buffer-size`, and `--max-message-size`.
+
+## Configuration
+
+Settings are applied in this order: system and user `config.toml`, files named
+by `HL_CONFIG` and `--config`, `HL_*` environment variables, then command-line
+options. `--config -` skips the default files. A minimal configuration is:
+
+```toml
+[input]
+allow-prefix = true
+
+[output]
+color = "auto"
+time-format = "%Y-%m-%d %T.%3N"
+time-zone = "UTC"
+hide-empty-fields = true
+expansion = "auto"
+
+[tuning]
+buffer-size = "256KiB"
+max-message-size = "64MiB"
+concurrency = 4
+```
+
+Supported environment settings include `HL_INPUT_FORMAT`, `HL_DELIMITER`,
+`HL_ALLOW_PREFIX`, `HL_LEVEL`, `HL_COLOR`, `HL_TIME_FORMAT`, `HL_TIME_ZONE`,
+`HL_HIDE_EMPTY_FIELDS`, `HL_EXPANSION`, `HL_OUTPUT_DELIMITER`, `HL_PAGING`,
+`HL_CONCURRENCY`, `HL_BUFFER_SIZE`, and `HL_MAX_MESSAGE_SIZE`.
 
 `build/hl --help` and `build/hl --version` provide command information.
 

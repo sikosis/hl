@@ -6,6 +6,15 @@
 
 namespace {
 
+bool expect(bool condition, const char* message)
+{
+    if (!condition) {
+        std::cerr << message << '\n';
+    }
+    return condition;
+}
+//---------------------------------------------------------------------------------------------------------------------------------//
+
 bool expectStream(std::string_view input, std::string_view expected)
 {
     std::istringstream source {std::string(input)};
@@ -47,6 +56,47 @@ int main()
     filteredOptions.filter.setMinimumLevel(hl::model::Level::Warning);
     passed &= hl::pipeline::formatStream(filteredSource, filteredOutput, filteredOptions);
     passed &= filteredOutput.str() == "[error] failed component=worker\n";
+
+    std::string manyEntries;
+    std::string expectedEntries;
+    for (int index = 0; index < 1000; ++index) {
+        manyEntries += "message=item-" + std::to_string(index) + "\n";
+        expectedEntries += "item-" + std::to_string(index) + "\r\n";
+    }
+    std::istringstream parallelSource(manyEntries);
+    std::ostringstream parallelOutput;
+    hl::pipeline::ProcessorOptions parallelOptions;
+    parallelOptions.concurrency = 4;
+    parallelOptions.bufferSize = 17;
+    parallelOptions.outputDelimiter = "\r\n";
+    parallelOptions.replaceOutputDelimiter = true;
+    passed &= hl::pipeline::formatStream(parallelSource, parallelOutput, parallelOptions);
+    passed &= expect(
+        parallelOutput.str() == expectedEntries,
+        "parallel pipeline did not preserve input order or output delimiters");
+
+    std::istringstream forcedTextSource("message=ready\n");
+    std::ostringstream forcedTextOutput;
+    hl::pipeline::ProcessorOptions forcedTextOptions;
+    forcedTextOptions.inputFormat = hl::parse::InputFormat::PlainText;
+    passed &= hl::pipeline::formatStream(forcedTextSource, forcedTextOutput, forcedTextOptions);
+    passed &= expect(
+        forcedTextOutput.str() == "message=ready\n",
+        "forced text input was reformatted");
+
+    std::istringstream sortedSource(
+        "{\"timestamp\":\"2026-10-20T12:00:02Z\",\"message\":\"third\"}\n"
+        "{\"timestamp\":\"2026-10-20T12:00:00Z\",\"message\":\"first\"}\n"
+        "continuation\n"
+        "{\"timestamp\":\"2026-10-20T12:00:01Z\",\"message\":\"second\"}\n");
+    std::ostringstream sortedOutput;
+    hl::pipeline::ProcessorOptions sortedOptions;
+    sortedOptions.sort = true;
+    sortedOptions.formatter.visibilityRules = {"time"};
+    passed &= hl::pipeline::formatStream(sortedSource, sortedOutput, sortedOptions);
+    passed &= expect(
+        sortedOutput.str() == "first\ncontinuation\nsecond\nthird\n",
+        "chronological sorting or untimed-entry grouping was incorrect");
     return passed ? 0 : 1;
 }
 //---------------------------------------------------------------------------------------------------------------------------------//

@@ -7,12 +7,14 @@
 namespace hl::parse {
 
 enum class InputFormat : std::uint8_t {
+    Auto,
     PlainText,
     Json,
     Logfmt,
 };
 
 InputFormat detectFormat(std::string_view entry);
+bool parseInputFormat(std::string_view text, InputFormat& format);
 std::string_view formatName(InputFormat format);
 
 } // namespace hl::parse

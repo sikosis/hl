@@ -4,10 +4,19 @@ project(hl VERSION 0.1.0 LANGUAGES CXX)
 
 include(CTest)
 include(GNUInstallDirs)
+find_package(Threads REQUIRED)
 
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+add_library(hl_config STATIC src/config/config.cpp)
+target_include_directories(hl_config PUBLIC src)
+target_compile_features(hl_config PUBLIC cxx_std_17)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(hl_config PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 add_library(hl_platform STATIC)
 target_include_directories(hl_platform PUBLIC src)
@@ -27,6 +36,7 @@ endif()
 add_library(hl_io STATIC
     src/io/entry_splitter.cpp
     src/io/input.cpp
+    src/io/pager.cpp
 )
 target_include_directories(hl_io PUBLIC src)
 target_compile_features(hl_io PUBLIC cxx_std_17)
@@ -73,6 +83,7 @@ endif()
 add_library(hl_query STATIC
     src/query/filter.cpp
     src/query/json_path.cpp
+    src/query/query.cpp
     src/query/time_argument.cpp
 )
 target_include_directories(hl_query PUBLIC src)
@@ -86,14 +97,14 @@ endif()
 add_library(hl_pipeline STATIC src/pipeline/processor.cpp)
 target_include_directories(hl_pipeline PUBLIC src)
 target_compile_features(hl_pipeline PUBLIC cxx_std_17)
-target_link_libraries(hl_pipeline PUBLIC hl_format hl_io hl_parse hl_query)
+target_link_libraries(hl_pipeline PUBLIC hl_format hl_io hl_parse hl_query Threads::Threads)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(hl_pipeline PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 add_executable(hl src/main.cpp)
-target_link_libraries(hl PRIVATE hl_io hl_pipeline hl_platform)
+target_link_libraries(hl PRIVATE hl_config hl_io hl_pipeline hl_platform)
 target_compile_definitions(hl PRIVATE HL_VERSION="${PROJECT_VERSION}")
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
@@ -103,6 +114,9 @@ endif()
 install(TARGETS hl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 if(BUILD_TESTING)
+    add_executable(config_test tests/config_test.cpp)
+    target_link_libraries(config_test PRIVATE hl_config)
+
     add_executable(platform_test tests/platform_test.cpp)
     target_link_libraries(platform_test PRIVATE hl_platform)
 
@@ -130,7 +144,11 @@ if(BUILD_TESTING)
     add_executable(time_argument_test tests/time_argument_test.cpp)
     target_link_libraries(time_argument_test PRIVATE hl_query)
 
+    add_executable(query_test tests/query_test.cpp)
+    target_link_libraries(query_test PRIVATE hl_query)
+
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(config_test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(platform_test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(input_test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(format_test PRIVATE -Wall -Wextra -Wpedantic)
@@ -140,6 +158,7 @@ if(BUILD_TESTING)
         target_compile_options(pipeline_test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(filter_test PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(time_argument_test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(query_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
     add_test(NAME hl_version COMMAND hl --version)
@@ -149,6 +168,7 @@ if(BUILD_TESTING)
     set_tests_properties(hl_help PROPERTIES PASS_REGULAR_EXPRESSION "Usage: hl")
 
     add_test(NAME platform COMMAND platform_test)
+    add_test(NAME config COMMAND config_test)
     add_test(NAME input COMMAND input_test)
     add_test(NAME format COMMAND format_test)
     add_test(NAME scanner COMMAND scanner_test)
@@ -157,4 +177,5 @@ if(BUILD_TESTING)
     add_test(NAME pipeline COMMAND pipeline_test)
     add_test(NAME filter COMMAND filter_test)
     add_test(NAME time_argument COMMAND time_argument_test)
+    add_test(NAME query COMMAND query_test)
 endif()
