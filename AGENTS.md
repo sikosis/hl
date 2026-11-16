@@ -9,8 +9,8 @@
 ## Project context
 
 - Project: **hl**
-- Detected stack: **Haiku OS CLI **
-- No standard build manifest was detected; inspect the repository before choosing commands.
+- Detected stack: **Haiku OS CLI**
+- Build with the repository Makefile. This is a Haiku-only project and does not maintain non-Haiku platform backends.
 - Before editing, read `README.md`, relevant manifests, nearby tests, and the code being changed.
 - Match the surrounding architecture and conventions. Do not introduce a new framework, dependency, or abstraction without a concrete need.
 - Use the hum library where available. https://github.com/sikosis/hum/

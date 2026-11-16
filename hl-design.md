@@ -2,7 +2,7 @@
 
 Oct 20, 2026
 
-`hl` for Haiku is a C++17 log-file viewer inspired by the core of [pamburus/hl](https://github.com/pamburus/hl). It reads ordinary text logs and adds structured formatting and filtering when entries are JSON or logfmt. It is built as a portable core with a thin Haiku platform layer, so it can be developed and tested on Linux and shipped as a Haiku package.
+`hl` (Haiku Log) is a Haiku-native C++17 log-file viewer inspired by the core of [pamburus/hl](https://github.com/pamburus/hl). It reads ordinary text logs and adds structured formatting and filtering when entries are JSON or logfmt. It targets current Haiku systems directly and is built with the repository Makefile.
 
 ## Goals and non-goals
 
@@ -12,13 +12,13 @@ v1 must read plain-text, JSON and logfmt logs from files, compressed files and s
 
 - Behave like upstream `hl` for the options people use daily: level, field and query filters, time range, field hiding, time format and zone, themes, pager.
 - Keep the command line, config keys and environment variables compatible with upstream where practical, so existing habits and config files carry over.
-- Isolate everything Haiku-specific behind one small interface, so the same core builds and tests on Linux and macOS.
+- Use Haiku APIs directly for settings paths, packaged data, terminal integration and future node monitoring.
 - Ship as a normal Haiku package (`hl.hpkg`) with a HaikuPorts recipe.
 
 **Non-goals for v1**
 
 - A graphical front end or Tracker integration.
-- Windows support.
+- Support for non-Haiku operating systems.
 - Byte-for-byte identical output to upstream; matching behaviour matters, matching every escape sequence does not.
 - BeOS-era `x86_gcc2` builds. The target is a modern GCC with full C++17 support.
 
@@ -80,7 +80,7 @@ Upstream `hl` is a Rust tool (MIT licence) that converts JSON and logfmt logs to
  +----------------------------------------------------------------+
 ```
 
-Inputs are cut into entries, a worker pool scans, filters and formats them in parallel, and an ordered sink restores the order before output. Settings decide the filters and theme; the platform layer supplies paths, the pager, file watching and terminal facts, and is the only code with separate POSIX and Haiku versions.
+Inputs are cut into entries, a worker pool scans, filters and formats them in parallel, and an ordered sink restores the order before output. Settings decide the filters and theme; the Haiku platform module supplies paths, pager lookup, future file watching and terminal facts.
 
 ## Module layout
 
@@ -88,7 +88,7 @@ The code is split into small libraries that only depend downwards. Everything un
 
 ```
 hl/
-  CMakeLists.txt
+  Makefile
   src/
     main.cpp               entry point, wiring
     cli/                   argument parsing, help, completions
@@ -100,7 +100,7 @@ hl/
     format/                formatter, themes, ANSI writer, time formatting
     pipeline/              scheduler, worker pool, ordered sink, merge sorter
     index/                 block index for sorted mode (v2)
-    platform/              platform.h + posix/ and haiku/ backends
+    platform/haiku/        Haiku settings, terminal and filesystem integration
   data/                    default config.toml, themes/*.toml
   third_party/             vendored header-only libraries
   tests/                   unit/, golden/, fuzz/
@@ -247,27 +247,27 @@ Allocation policy: workers reuse their `Record`, arena and output buffer between
 
 | Implementation | How it works | Use |
 | --- | --- | --- |
-| `PollingWatcher` | `stat` each file every sync interval and compare size, modification time and node number | Default everywhere, no extra libraries |
-| `HaikuNodeWatcher` | `watch_node()` with `B_WATCH_STAT`; a `B_STAT_CHANGED` notification with the size field set means the file grew | Optional, enabled by a CMake flag |
+| `PollingWatcher` | `stat` each file every sync interval and compare size, modification time and node number | Initial implementation |
+| `HaikuNodeWatcher` | `watch_node()` with `B_WATCH_STAT`; a `B_STAT_CHANGED` notification with the size field set means the file grew | Future Haiku-native optimisation |
 
 Haiku's node monitor delivers notifications as messages to a `BMessenger` target, so using it means linking `libbe` and running a `BLooper` in the process. That is why it is an optional optimisation to cut idle wake-ups and not the default. The API also has a `B_WATCH_INTERIM_STAT` flag that lets a file system rate-limit notifications for frequent small writes, which suits a log being appended continuously. See the Haiku [node monitoring notes](https://www.haiku-os.org/docs/develop/file_systems/node_monitoring.html) and the [`NodeMonitor.h` reference](https://api.haiku-os.org/NodeMonitor_8h.html).
 
 Both watchers must handle truncation (size smaller than the read offset: restart at 0) and rotation (a different node at the same path: finish the old file, then open the new one).
 
-## Haiku platform layer
+## Haiku platform integration
 
-All operating-system differences sit behind `platform/platform.h`. The core calls these functions and never includes a Haiku header. Two backends exist: `posix/` (Linux and macOS, used for development and CI) and `haiku/`.
+Haiku-specific code lives under `platform/haiku/`; there is no non-Haiku backend.
 
-| Concern | Interface | POSIX backend | Haiku backend |
-| --- | --- | --- | --- |
-| User settings directory | `userConfigDir()` | `$XDG_CONFIG_HOME/hl` or `~/.config/hl` | `find_directory(B_USER_SETTINGS_DIRECTORY)` plus `hl/`, i.e. `~/config/settings/hl/` |
-| System settings directory | `systemConfigDir()` | `/etc/hl` | `find_directory(B_SYSTEM_SETTINGS_DIRECTORY)` plus `hl/` |
-| Packaged defaults (themes, default config) | `dataDirs()` | `/usr/share/hl` | `BPathFinder` with `B_FIND_PATH_DATA_DIRECTORY`, which searches user and system, non-packaged before packaged |
-| Cache directory for indexes | `cacheDir()` | `$XDG_CACHE_HOME/hl` | `find_directory(B_USER_CACHE_DIRECTORY)` plus `hl/` |
-| Terminal width and capabilities | `terminalInfo()` | `ioctl(TIOCGWINSZ)`, `TERM`, `COLORTERM` | same calls, with Haiku-specific defaults confirmed on a real system |
-| Pager | `findPager()` | `HL_PAGER`, `PAGER`, then `less` | same; fall back to plain output if no pager is installed |
-| File watching | `makeFileWatcher()` | polling | polling, or `watch_node()` when built with the node-monitor option |
-| File identity | `fileId(path)` | `st_dev` and `st_ino` | `st_dev` and `st_ino` (Haiku maps these to its device and node numbers) |
+| Concern | Haiku implementation |
+| --- | --- |
+| User settings directory | `find_directory(B_USER_SETTINGS_DIRECTORY)` plus `hl/`, i.e. `~/config/settings/hl/` |
+| System settings directory | `find_directory(B_SYSTEM_SETTINGS_DIRECTORY)` plus `hl/` |
+| Packaged defaults | `BPathFinder` with `B_FIND_PATH_DATA_DIRECTORY`, searching user and system locations |
+| Cache directory | `find_directory(B_USER_CACHE_DIRECTORY)` plus `hl/` |
+| Terminal information | `ioctl(TIOCGWINSZ)`, `TERM` and `COLORTERM` |
+| Pager | `HL_PAGER`, `PAGER`, optional `hum pager`, then `less` |
+| File watching | polling initially; `watch_node()` is the planned optimisation |
+| File identity | `st_dev` and `st_ino`, mapped to Haiku device and node numbers |
 
 **Why `find_directory` and `BPathFinder`.** Haiku's `find_directory()` constants give the user and system settings locations, and the [API reference](https://www.haiku-os.org/docs/api/FindDirectory_8h.html) recommends the C++ `BPathFinder` class for new code. Packaged files under `/boot/system` are read-only, so the design never writes there: defaults ship inside the package and are only read; user changes go to `~/config/settings/hl/`. A [forum thread](https://discuss.haiku-os.org/t/my-first-publicly-available-app-for-haiku/8633?page=2) from Haiku developers gives the same advice: find shipped data with `BPathFinder`, keep user settings in the user settings directory.
 
@@ -275,7 +275,7 @@ All operating-system differences sit behind `platform/platform.h`. The core call
 
 **Pager.** `hl` starts the pager with `fork` and `exec` on a pipe, sets `LESS` to include `-R` when the user has not set it (so colour passes through), and waits for it on exit. If the pager cannot be started, output goes straight to the terminal. When hum is installed it can serve as the default pager (see Optional integration: hum below).
 
-**Threads and memory.** CMake's `Threads` package supplies whatever thread library flag the platform needs, `mmap` has a `read`-based fallback, and file offsets use 64-bit `off_t`.
+**Threads and memory.** The Makefile enables Haiku's pthread support directly, input streams use bounded reads, and file offsets use 64-bit `off_t`.
 
 **Package contents** (`hl-<version>-<arch>.hpkg`): `bin/hl`, `data/hl/config.toml`, `data/hl/themes/*.toml`, `documentation/man/man1/hl.1`, and a `.PackageInfo` that lists the runtime requirements (the compression libraries, if linked dynamically).
 
@@ -326,18 +326,17 @@ Usage is `hl [OPTIONS] [FILE]...`; with no files, or with `-`, input comes from 
 
 ## Build, dependencies and packaging
 
-**Toolchain.** CMake 3.16 or later, `-std=c++17`, `-Wall -Wextra`, GCC or Clang. Haiku's repositories carried GCC 13.2.0 packages in late 2023 (reported in a [Swift-on-Haiku build page](https://www.github.com/return/swift-haiku-build)), which is well past what C++17 needs; confirm the compiler on the target Haiku release before the first build. The legacy 32-bit `x86_gcc2` toolchain is not a target.
+**Toolchain.** The repository Makefile uses Haiku's modern GCC toolchain with `-std=c++17`, `-Wall`, `-Wextra` and `-Wpedantic`. The legacy 32-bit `x86_gcc2` toolchain is not a target.
 
 **Dependencies.** A HaikuPorts recipe declares its requirements as packages and builds in a controlled environment, so the project keeps its dependency list short:
 
 | Dependency | Purpose | How it is obtained |
 | --- | --- | --- |
-| CLI11 | Command-line parsing | Vendored in `third_party/` (header-only) |
-| toml++ | Config and theme files | Vendored (header-only, C++17) |
-| doctest | Unit tests | Vendored, test builds only |
-| zlib, bzip2, liblzma, zstd | gzip, bzip2, xz and zstd input | System packages, each optional (`HL_WITH_ZLIB` and so on); package names to be confirmed in HaikuPorts |
-| PCRE2 or RE2 | Faster regular expressions | Optional; `std::regex` is the fallback |
-| `libbe` | Node monitor watcher | Only with `HL_USE_NODE_MONITOR=ON` |
+| Haiku `libbe` | Native path and packaged-data APIs | Base Haiku development environment |
+| pthread support | Ordered worker pipeline | Haiku GCC toolchain |
+| gzip, bzip2, xz, zstd commands | Optional compressed input | Haiku packages; detected when a matching file is opened |
+| `std::regex` | Query regular expressions | C++17 standard library |
+| hum | Optional default pager | Separate optional Haiku command |
 
 **Recipe sketch** (HaikuPorts recipes are shell scripts with `BUILD()` and `INSTALL()` functions; see the [recipe reference](https://www.github.com/haikuports/haikuports/wiki/HaikuPorter-BuildRecipes) and check field names against it before submitting):
 
@@ -356,47 +355,45 @@ BUILD_REQUIRES="
 	haiku_devel
 	"
 BUILD_PREREQUIRES="
-	cmd:cmake
 	cmd:g++
 	cmd:make
 	"
 
 BUILD()
 {
-	cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$prefix
-	cmake --build build -j$jobs
+	make -j$jobs
 }
 
 INSTALL()
 {
-	cmake --install build
+	make install DESTDIR=$installDestDir PREFIX=$prefix
 }
 
 TEST()
 {
-	ctest --test-dir build
+	make test
 }
 ```
 
-**Local build and CI.** Day-to-day work happens on Linux with the POSIX backend. CI runs on every push: GCC and Clang builds, `ctest`, AddressSanitizer and UBSan runs, and a short fuzz job on the parsers. A second job builds and tests on a Haiku image (nightly or on tags) so Haiku-only code paths are not left untested; Haiku's [nightly images](https://download.haiku-os.org/) can be booted in a virtual machine for this.
+**Local build and CI.** Development, tests and release validation run on Haiku with `make` and `make test`. CI should use a Haiku environment so the same compiler, headers, `libbe` linkage and filesystem conventions used by release builds are exercised.
 
 **Licence.** MIT, matching upstream. If any upstream theme files or text are copied rather than rewritten, their copyright notice is kept in the repository and in the package.
 
 ## Testing and benchmarking
 
-**Unit tests** (doctest) cover the pieces with sharp edges: scanners (escapes, Unicode, deep nesting, truncated input), timestamp parsing, level mapping, the time formatter, the query lexer and parser, predicate semantics (missing fields, the `?` modifier, numeric versus text comparison) and theme resolution with overlays.
+**Unit tests** are standalone C++ test binaries built and run by `make test`. They cover scanners (escapes, Unicode, deep nesting, truncated input), timestamp parsing, level mapping, the time formatter, the query lexer and parser, predicate semantics (missing fields, the `?` modifier, numeric versus text comparison) and theme resolution with overlays.
 
 **Golden tests** run the binary over a small corpus (JSON, logfmt, mixed, prefixed, multi-line values) with `--color never`, a fixed time format and `-Z UTC`, and compare against stored output. A second set keeps coloured output for the default theme.
 
-**Differential tests** run the upstream `hl` binary and this one over the same corpus on Linux and compare which entries pass each filter, not the exact bytes. This catches query-semantics drift cheaply.
+**Differential tests** run the upstream `hl` binary and this one over the same corpus on Haiku and compare which entries pass each filter, not the exact bytes. This catches query-semantics drift cheaply.
 
-**Fuzzing.** libFuzzer targets for `JsonScanner`, `LogfmtScanner`, the query parser and the time-argument parser, run in CI on Linux with sanitizers.
+**Fuzzing.** Parser fuzz targets are a future option if a suitable Haiku-native sanitizer workflow is established.
 
 **Pipeline tests** use tiny buffers so entries straddle buffer boundaries, random worker delays to prove output order, an oversized entry to exercise `--max-message-size`, and a closed pipe to exercise `EPIPE`.
 
 **Follow-mode tests** append to, truncate and rotate a file under both watchers.
 
-**Haiku-only tests**, run in the Haiku VM job: directory resolution through `find_directory` and `BPathFinder`, pager start-up, and the node-monitor watcher.
+**Haiku integration tests** cover directory resolution through `find_directory` and `BPathFinder`, pager start-up, and the future node-monitor watcher.
 
 **Benchmarks.** `bench/` generates a synthetic corpus with the same shape as upstream's reference file (about 2.3 GiB, 6 million lines) and follows the method upstream uses: `time hl --config - FILE -c -o /dev/null`, with the measurement recipe in upstream [issue #132](https://github.com/pamburus/hl/issues/132). The targets below are proposals for this project, to be revised once Haiku numbers exist.
 
@@ -410,11 +407,11 @@ TEST()
 
 ## Roadmap
 
-Four phases, each ending in something that can be installed and used. A phase is done only when its exit criteria hold on a real Haiku system, not just on Linux.
+Four phases, each ending in something that can be installed and used. A phase is done only when its exit criteria hold on a real Haiku system.
 
 | Phase | Scope | Exit criteria |
 | --- | --- | --- |
-| 0. Skeleton | CMake project, `platform/` interface with POSIX and Haiku backends, CI on Linux, Haiku VM job, vendored libraries | `hl --version` runs on Linux and in the Haiku VM; CI green on both |
+| 0. Skeleton | Native Makefile, Haiku platform integration and test targets | `hl --version` and `make test` pass on Haiku |
 | 1. MVP | Plain-text pass-through, JSON and logfmt scanners, level, field and time-range filters, field hiding, UTC and local time, default theme, colour, pager, multiple files and stdin, parallel pipeline | Golden tests pass for plain and structured logs; formats a 1 GiB log on Haiku with all cores busy; output order identical to input |
 | 2. v1 | Query language, config files and `HL_*` variables, themes and overlays, field expansion, compressed input, `--allow-prefix`, named time zones, in-memory sort, follow mode with polling | Differential tests agree with upstream on the query corpus; `hl -F` merges two live logs in timestamp order; HaikuPorts recipe submitted |
 | 3. v2 | Persistent block index for `-s`, node-monitor watcher, shell completions, man page, benchmark report | Re-sorting an unchanged large file is much faster than the first run; benchmark table published with Haiku numbers |

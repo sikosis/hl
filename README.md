@@ -1,10 +1,10 @@
 # hl
 
-`hl` is a fast log-file viewer for Haiku, implemented in C++17 and inspired by
+`hl` (Haiku Log) is a fast Haiku log-file viewer, implemented in C++17 and inspired by
 [pamburus/hl](https://github.com/pamburus/hl). It reads ordinary text logs as
 well as structured JSON and logfmt logs. Structured formats enable richer field
-formatting and filtering, but they are not required. The core remains portable
-across Haiku, Linux and macOS.
+formatting and filtering, but they are not required. It is built specifically
+for current Haiku systems and uses Haiku APIs directly.
 
 The project is in active development. It streams ordinary logs from files or
 stdin and automatically recognises text, JSON and logfmt entries. Structured
@@ -17,27 +17,20 @@ installed.
 ## Build
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-The repository also provides a convenience Makefile. On Haiku, `make install`
-defaults to `/boot/system/non-packaged`:
-
-```sh
 make
 make test
 make install
+make clean
 ```
 
-Override the build directory, build type, or installation prefix when needed:
+`make install` defaults to the current user's non-packaged binary directory,
+`/boot/home/config/non-packaged/bin`. Override the prefix when needed:
 
 ```sh
-make install BUILD_DIR=build-debug BUILD_TYPE=Debug PREFIX="$HOME/config/non-packaged"
+make install PREFIX=/boot/system/non-packaged
 ```
 
-For package staging, `DESTDIR` is passed through to CMake:
+For package staging, use `DESTDIR`:
 
 ```sh
 make install DESTDIR=/tmp/hl-package-root
@@ -46,10 +39,10 @@ make install DESTDIR=/tmp/hl-package-root
 Run it with a file, several files, or stdin:
 
 ```sh
-build/hl system.log
-build/hl application.log server.log
-tail -f system.log | build/hl
-build/hl application.log.gz
+./hl system.log
+./hl application.log server.log
+tail -f system.log | ./hl
+./hl application.log.gz
 ```
 
 Use `--raw` (or `-r`) to copy every input byte without structured formatting.
@@ -59,10 +52,10 @@ to force it, and `--color=never` to disable it.
 Filter structured logs by minimum level, fields, or time:
 
 ```sh
-build/hl -l warning application.log
-build/hl -f component=api -f 'message~=failed' application.log
-build/hl --since=-3h --until=now application.log
-build/hl -q 'level = error and (status >= 500 or exists(exception))' application.log
+./hl -l warning application.log
+./hl -f component=api -f 'message~=failed' application.log
+./hl --since=-3h --until=now application.log
+./hl -q 'level = error and (status >= 500 or exists(exception))' application.log
 ```
 
 Field filters support `=`, `!=`, `~=` (contains), and `!~=` (does not
@@ -73,9 +66,9 @@ where that field is absent. Time bounds accept RFC 3339, Unix timestamps, `now`,
 Nested JSON paths work in field filters, including array indexes and wildcards:
 
 ```sh
-build/hl -f request.method=POST application.log
-build/hl -f spans.[1].name=backend application.log
-build/hl -f spans.[].name=backend application.log
+./hl -f request.method=POST application.log
+./hl -f spans.[1].name=backend application.log
+./hl -f spans.[].name=backend application.log
 ```
 
 Hide fields with repeatable `-h`/`--hide` options or comma-separated rules.
@@ -84,19 +77,19 @@ matches every field. Use `-e` to hide empty strings, objects, arrays and nulls,
 or `-E` to show them again.
 
 ```sh
-build/hl -h caller,request_id application.log
-build/hl -h '*' -h '!message' -h '!code' application.log
-build/hl -e application.log
+./hl -h caller,request_id application.log
+./hl -h '*' -h '!message' -h '!code' application.log
+./hl -e application.log
 ```
 
 Force an input format or delimiter, tolerate a prefix before JSON, or merge
 several files chronologically:
 
 ```sh
-build/hl --input-format logfmt application.log
-build/hl --delimiter nul --output-delimiter lf records.bin
-build/hl --allow-prefix prefixed-json.log
-build/hl --sort api.log worker.log
+./hl --input-format logfmt application.log
+./hl --delimiter nul --output-delimiter lf records.bin
+./hl --allow-prefix prefixed-json.log
+./hl --sort api.log worker.log
 ```
 
 Timestamp output supports normal `strftime` conversions plus `%3N`, `%6N` and
@@ -104,9 +97,9 @@ Timestamp output supports normal `strftime` conversions plus `%3N`, `%6N` and
 system time-zone name.
 
 ```sh
-build/hl -t '%H:%M:%S.%6N' application.log
-build/hl -Z Australia/Brisbane application.log
-build/hl -x auto application.log
+./hl -t '%H:%M:%S.%6N' application.log
+./hl -Z Australia/Brisbane application.log
+./hl -x auto application.log
 ```
 
 Paging is automatic on a terminal. `-P` disables it; `--paging=always` forces
@@ -142,7 +135,7 @@ Supported environment settings include `HL_INPUT_FORMAT`, `HL_DELIMITER`,
 `HL_HIDE_EMPTY_FIELDS`, `HL_EXPANSION`, `HL_OUTPUT_DELIMITER`, `HL_PAGING`,
 `HL_CONCURRENCY`, `HL_BUFFER_SIZE`, and `HL_MAX_MESSAGE_SIZE`.
 
-`build/hl --help` and `build/hl --version` provide command information.
+`./hl --help` and `./hl --version` provide command information.
 
 See [hl-design.md](hl-design.md) for the architecture, compatibility goals and
 roadmap.
