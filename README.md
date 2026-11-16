@@ -22,6 +22,27 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+The repository also provides a convenience Makefile. On Haiku, `make install`
+defaults to `/boot/system/non-packaged`:
+
+```sh
+make
+make test
+make install
+```
+
+Override the build directory, build type, or installation prefix when needed:
+
+```sh
+make install BUILD_DIR=build-debug BUILD_TYPE=Debug PREFIX="$HOME/config/non-packaged"
+```
+
+For package staging, `DESTDIR` is passed through to CMake:
+
+```sh
+make install DESTDIR=/tmp/hl-package-root
+```
+
 Run it with a file, several files, or stdin:
 
 ```sh
